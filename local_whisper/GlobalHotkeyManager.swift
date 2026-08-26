@@ -5,21 +5,25 @@ import Carbon
 final class GlobalHotkeyManager {
     var onEncouragement: (() -> Void)?
     var onTranscribe: (() -> Void)?
+    var onScreenshot: (() -> Void)?
     var onEscape: (() -> Void)?
 
     private var encouragementHotKeyRef: EventHotKeyRef?
     private var transcribeHotKeyRef: EventHotKeyRef?
+    private var screenshotHotKeyRef: EventHotKeyRef?
     private var escapeHotKeyRef: EventHotKeyRef?
     private var eventHandler: EventHandlerRef?
 
     private static let signature: OSType = 0x4C574850 // 'LWHP'
     private static let encouragementID = EventHotKeyID(signature: signature, id: 1)
     private static let transcribeID = EventHotKeyID(signature: signature, id: 2)
+    private static let screenshotID = EventHotKeyID(signature: signature, id: 4)
     private static let escapeID = EventHotKeyID(signature: signature, id: 3)
 
     struct Registration {
         var encouragement = false
         var transcribe = false
+        var screenshot = false
     }
 
     func start() -> Registration {
@@ -53,6 +57,7 @@ final class GlobalHotkeyManager {
                     case 1: manager.onEncouragement?()
                     case 2: manager.onTranscribe?()
                     case 3: manager.onEscape?()
+                    case 4: manager.onScreenshot?()
                     default: break
                     }
                 }
@@ -83,6 +88,14 @@ final class GlobalHotkeyManager {
             0,
             &transcribeHotKeyRef
         ) == noErr
+        result.screenshot = RegisterEventHotKey(
+            UInt32(kVK_ANSI_R),
+            UInt32(controlKey | optionKey),
+            Self.screenshotID,
+            GetApplicationEventTarget(),
+            0,
+            &screenshotHotKeyRef
+        ) == noErr
         return result
     }
 
@@ -112,11 +125,15 @@ final class GlobalHotkeyManager {
         if let transcribeHotKeyRef {
             UnregisterEventHotKey(transcribeHotKeyRef)
         }
+        if let screenshotHotKeyRef {
+            UnregisterEventHotKey(screenshotHotKeyRef)
+        }
         if let eventHandler {
             RemoveEventHandler(eventHandler)
         }
         encouragementHotKeyRef = nil
         transcribeHotKeyRef = nil
+        screenshotHotKeyRef = nil
         eventHandler = nil
     }
 

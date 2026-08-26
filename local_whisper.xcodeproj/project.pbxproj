@@ -262,6 +262,7 @@
 				INFOPLIST_KEY_LSUIElement = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "local_whisper records your voice so it can transcribe it.";
+				INFOPLIST_KEY_NSScreenCaptureUsageDescription = "local_whisper captures a screenshot so it can copy text from the image.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -296,6 +297,7 @@
 				INFOPLIST_KEY_LSUIElement = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "local_whisper records your voice so it can transcribe it.";
+				INFOPLIST_KEY_NSScreenCaptureUsageDescription = "local_whisper captures a screenshot so it can copy text from the image.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",

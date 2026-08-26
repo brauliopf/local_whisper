@@ -18,6 +18,10 @@ struct local_whisperApp: App {
                 appModel.toggleTranscription()
             }
 
+            Button("Read screenshot    ⌃⌥R") {
+                appModel.readScreenshot()
+            }
+
             Divider()
 
             SettingsLink()
