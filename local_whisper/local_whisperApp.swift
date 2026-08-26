@@ -10,17 +10,20 @@ struct local_whisperApp: App {
         MenuBarExtra {
             AppModelSettingsBridge(appModel: appModel)
 
-            Button("Show Encouragement    ⌃⌥E") {
+            Button("Show Encouragement") {
                 appModel.showEncouragement()
             }
+            .keyboardShortcut("e", modifiers: [.control, .option])
 
-            Button("Transcribe    ⌃⌥W") {
+            Button("Transcribe") {
                 appModel.toggleTranscription()
             }
+            .keyboardShortcut("w", modifiers: [.control, .option])
 
-            Button("Read screenshot    ⌃⌥R") {
+            Button("Read screenshot") {
                 appModel.readScreenshot()
             }
+            .keyboardShortcut("r", modifiers: [.control, .option])
 
             Divider()
 
@@ -31,6 +34,7 @@ struct local_whisperApp: App {
             Button("Quit") {
                 NSApplication.shared.terminate(nil)
             }
+            .keyboardShortcut("q")
         } label: {
             Image(systemName: "sparkles")
         }
