@@ -14,6 +14,10 @@ struct local_whisperApp: App {
                 appModel.showEncouragement()
             }
 
+            Button("Transcribe    ⌃⌥W") {
+                appModel.toggleTranscription()
+            }
+
             Divider()
 
             SettingsLink()

@@ -7,7 +7,7 @@ final class ToastPanelController {
     private var hostingView: NSHostingView<ToastView>?
     private var dismissTask: Task<Void, Never>?
 
-    func show(message: String, isError: Bool) {
+    func show(message: String, isError: Bool, autoDismiss: Bool = true) {
         dismissTask?.cancel()
 
         let screen = screenForCursor()
@@ -45,6 +45,8 @@ final class ToastPanelController {
         panel.setContentSize(size)
         panel.setFrameOrigin(origin(for: size, on: screen))
         panel.orderFrontRegardless()
+
+        guard autoDismiss else { return }
 
         dismissTask = Task {
             try? await Task.sleep(for: .seconds(5))
