@@ -6,9 +6,6 @@
 
 <!-- List the commands you ran and their results. -->
 
-- [ ] `npm test`
-- [ ] `npm run build`
-
 ## Breaking changes and configuration
 
 <!-- Describe breaking changes, migrations, new environment variables, or write "None". -->
