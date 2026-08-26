@@ -1,16 +1,28 @@
 import AppKit
 import Carbon
 
-/// System-wide ⌃⌥E via Carbon hotkeys — does not need Accessibility.
+/// System-wide Carbon hotkeys — does not need Accessibility.
 final class GlobalHotkeyManager {
-    var onTrigger: (() -> Void)?
+    var onEncouragement: (() -> Void)?
+    var onTranscribe: (() -> Void)?
+    var onEscape: (() -> Void)?
 
-    private var hotKeyRef: EventHotKeyRef?
+    private var encouragementHotKeyRef: EventHotKeyRef?
+    private var transcribeHotKeyRef: EventHotKeyRef?
+    private var escapeHotKeyRef: EventHotKeyRef?
     private var eventHandler: EventHandlerRef?
 
-    private static let hotKeyID = EventHotKeyID(signature: 0x4C574850, id: 1) // 'LWHP'
+    private static let signature: OSType = 0x4C574850 // 'LWHP'
+    private static let encouragementID = EventHotKeyID(signature: signature, id: 1)
+    private static let transcribeID = EventHotKeyID(signature: signature, id: 2)
+    private static let escapeID = EventHotKeyID(signature: signature, id: 3)
 
-    func start() -> Bool {
+    struct Registration {
+        var encouragement = false
+        var transcribe = false
+    }
+
+    func start() -> Registration {
         stop()
 
         var eventType = EventTypeSpec(
@@ -33,13 +45,16 @@ final class GlobalHotkeyManager {
                     nil,
                     &hotKeyID
                 )
-                guard status == noErr, hotKeyID.id == GlobalHotkeyManager.hotKeyID.id else {
-                    return OSStatus(eventNotHandledErr)
-                }
+                guard status == noErr else { return OSStatus(eventNotHandledErr) }
 
                 let manager = Unmanaged<GlobalHotkeyManager>.fromOpaque(userData).takeUnretainedValue()
                 DispatchQueue.main.async {
-                    manager.onTrigger?()
+                    switch hotKeyID.id {
+                    case 1: manager.onEncouragement?()
+                    case 2: manager.onTranscribe?()
+                    case 3: manager.onEscape?()
+                    default: break
+                    }
                 }
                 return noErr
             },
@@ -49,28 +64,59 @@ final class GlobalHotkeyManager {
             &eventHandler
         )
 
-        guard installed == noErr else { return false }
+        guard installed == noErr else { return Registration() }
 
-        let registered = RegisterEventHotKey(
+        var result = Registration()
+        result.encouragement = RegisterEventHotKey(
             UInt32(kVK_ANSI_E),
             UInt32(controlKey | optionKey),
-            Self.hotKeyID,
+            Self.encouragementID,
             GetApplicationEventTarget(),
             0,
-            &hotKeyRef
-        )
+            &encouragementHotKeyRef
+        ) == noErr
+        result.transcribe = RegisterEventHotKey(
+            UInt32(kVK_ANSI_W),
+            UInt32(controlKey | optionKey),
+            Self.transcribeID,
+            GetApplicationEventTarget(),
+            0,
+            &transcribeHotKeyRef
+        ) == noErr
+        return result
+    }
 
-        return registered == noErr
+    func setEscapeEnabled(_ enabled: Bool) {
+        if let escapeHotKeyRef {
+            UnregisterEventHotKey(escapeHotKeyRef)
+            self.escapeHotKeyRef = nil
+        }
+
+        guard enabled else { return }
+
+        _ = RegisterEventHotKey(
+            UInt32(kVK_Escape),
+            0,
+            Self.escapeID,
+            GetApplicationEventTarget(),
+            0,
+            &escapeHotKeyRef
+        )
     }
 
     func stop() {
-        if let hotKeyRef {
-            UnregisterEventHotKey(hotKeyRef)
+        setEscapeEnabled(false)
+        if let encouragementHotKeyRef {
+            UnregisterEventHotKey(encouragementHotKeyRef)
+        }
+        if let transcribeHotKeyRef {
+            UnregisterEventHotKey(transcribeHotKeyRef)
         }
         if let eventHandler {
             RemoveEventHandler(eventHandler)
         }
-        hotKeyRef = nil
+        encouragementHotKeyRef = nil
+        transcribeHotKeyRef = nil
         eventHandler = nil
     }
 

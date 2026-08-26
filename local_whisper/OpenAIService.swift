@@ -81,6 +81,64 @@ struct OpenAIService {
         return trimmed
     }
 
+    func transcribeAudio(at fileURL: URL) async throws -> String {
+        guard let apiKey = KeychainService.loadAPIKey(), !apiKey.isEmpty else {
+            throw OpenAIError.missingAPIKey
+        }
+
+        let boundary = UUID().uuidString
+        var request = URLRequest(url: URL(string: "https://api.openai.com/v1/audio/transcriptions")!)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 90
+
+        let fileData = try Data(contentsOf: fileURL)
+        let filename = fileURL.lastPathComponent
+        var body = Data()
+        Self.appendFormField("model", value: "gpt-4o-mini-transcribe", boundary: boundary, to: &body)
+        body.append(Data("--\(boundary)\r\n".utf8))
+        body.append(Data("Content-Disposition: form-data; name=\"file\"; filename=\"\(filename)\"\r\n".utf8))
+        body.append(Data("Content-Type: audio/mp4\r\n\r\n".utf8))
+        body.append(fileData)
+        body.append(Data("\r\n--\(boundary)--\r\n".utf8))
+        request.httpBody = body
+
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await URLSession.shared.data(for: request)
+        } catch {
+            throw OpenAIError.network(Self.networkMessage(for: error))
+        }
+
+        guard let http = response as? HTTPURLResponse else {
+            throw OpenAIError.apiError("Couldn't transcribe — try again.")
+        }
+
+        if http.statusCode != 200 {
+            let message = Self.parseErrorMessage(from: data) ?? "Couldn't transcribe — check your API key."
+            throw OpenAIError.apiError(message)
+        }
+
+        guard
+            let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+            let text = json["text"] as? String
+        else {
+            throw OpenAIError.apiError("Couldn't transcribe — try again.")
+        }
+
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { throw OpenAIError.apiError("Nothing to transcribe") }
+        return trimmed
+    }
+
+    private static func appendFormField(_ name: String, value: String, boundary: String, to body: inout Data) {
+        body.append(Data("--\(boundary)\r\n".utf8))
+        body.append(Data("Content-Disposition: form-data; name=\"\(name)\"\r\n\r\n".utf8))
+        body.append(Data("\(value)\r\n".utf8))
+    }
+
     private static func networkMessage(for error: Error) -> String {
         let code = (error as? URLError)?.code
         switch code {
