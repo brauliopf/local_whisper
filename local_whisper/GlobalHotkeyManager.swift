@@ -1,46 +1,80 @@
 import AppKit
+import Carbon
 
+/// System-wide ⌃⌥E via Carbon hotkeys — does not need Accessibility.
 final class GlobalHotkeyManager {
     var onTrigger: (() -> Void)?
 
-    private var globalMonitor: Any?
-    private var localMonitor: Any?
+    private var hotKeyRef: EventHotKeyRef?
+    private var eventHandler: EventHandlerRef?
+
+    private static let hotKeyID = EventHotKeyID(signature: 0x4C574850, id: 1) // 'LWHP'
 
     func start() -> Bool {
-        let handler: (NSEvent) -> Void = { [weak self] event in
-            guard Self.matchesHotkey(event) else { return }
-            Task { @MainActor in
-                self?.onTrigger?()
-            }
-        }
+        stop()
 
-        globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown, handler: handler)
-        localMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-            if Self.matchesHotkey(event) {
-                Task { @MainActor in
-                    self.onTrigger?()
+        var eventType = EventTypeSpec(
+            eventClass: OSType(kEventClassKeyboard),
+            eventKind: UInt32(kEventHotKeyPressed)
+        )
+
+        let installed = InstallEventHandler(
+            GetApplicationEventTarget(),
+            { _, event, userData in
+                guard let event, let userData else { return OSStatus(eventNotHandledErr) }
+
+                var hotKeyID = EventHotKeyID()
+                let status = GetEventParameter(
+                    event,
+                    EventParamName(kEventParamDirectObject),
+                    EventParamType(typeEventHotKeyID),
+                    nil,
+                    MemoryLayout<EventHotKeyID>.size,
+                    nil,
+                    &hotKeyID
+                )
+                guard status == noErr, hotKeyID.id == GlobalHotkeyManager.hotKeyID.id else {
+                    return OSStatus(eventNotHandledErr)
                 }
-                return nil
-            }
-            return event
-        }
 
-        return globalMonitor != nil
+                let manager = Unmanaged<GlobalHotkeyManager>.fromOpaque(userData).takeUnretainedValue()
+                DispatchQueue.main.async {
+                    manager.onTrigger?()
+                }
+                return noErr
+            },
+            1,
+            &eventType,
+            Unmanaged.passUnretained(self).toOpaque(),
+            &eventHandler
+        )
+
+        guard installed == noErr else { return false }
+
+        let registered = RegisterEventHotKey(
+            UInt32(kVK_ANSI_E),
+            UInt32(controlKey | optionKey),
+            Self.hotKeyID,
+            GetApplicationEventTarget(),
+            0,
+            &hotKeyRef
+        )
+
+        return registered == noErr
     }
 
     func stop() {
-        if let globalMonitor {
-            NSEvent.removeMonitor(globalMonitor)
+        if let hotKeyRef {
+            UnregisterEventHotKey(hotKeyRef)
         }
-        if let localMonitor {
-            NSEvent.removeMonitor(localMonitor)
+        if let eventHandler {
+            RemoveEventHandler(eventHandler)
         }
-        globalMonitor = nil
-        localMonitor = nil
+        hotKeyRef = nil
+        eventHandler = nil
     }
 
-    private static func matchesHotkey(_ event: NSEvent) -> Bool {
-        let flags = event.modifierFlags.intersection([.control, .option, .command, .shift])
-        return flags == [.control, .option] && event.keyCode == 14
+    deinit {
+        stop()
     }
 }

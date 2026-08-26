@@ -14,12 +14,6 @@ struct local_whisperApp: App {
                 appModel.showEncouragement()
             }
 
-            if !appModel.isGlobalHotkeyEnabled {
-                Button("Enable Global Shortcut…") {
-                    appModel.openAccessibilitySettings()
-                }
-            }
-
             Divider()
 
             SettingsLink()
