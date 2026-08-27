@@ -12,6 +12,7 @@ final class AppModel {
     private let audioRecorder = AudioRecorder()
     private var fetchTask: Task<Void, Never>?
     private var transcribeTask: Task<Void, Never>?
+    private var screenshotTask: Task<Void, Never>?
     private var maxDurationTask: Task<Void, Never>?
     private var didFinishLaunching = false
     private var isRecording = false
@@ -26,6 +27,9 @@ final class AppModel {
         }
         hotkeyManager.onTranscribe = { [weak self] in
             self?.toggleTranscription()
+        }
+        hotkeyManager.onScreenshot = { [weak self] in
+            self?.readScreenshot()
         }
         hotkeyManager.onEscape = { [weak self] in
             self?.cancelRecording()
@@ -49,6 +53,12 @@ final class AppModel {
                 isError: true
             )
         }
+        if !registration.screenshot {
+            toastController.show(
+                message: "Couldn't register ⌃⌥R — another app may already use that shortcut.",
+                isError: true
+            )
+        }
     }
 
     func showEncouragement() {
@@ -57,6 +67,8 @@ final class AppModel {
         }
         transcribeTask?.cancel()
         isTranscribing = false
+        screenshotTask?.cancel()
+        ScreenshotCapture.cancel()
 
         guard KeychainService.hasAPIKey else {
             openSettings?()
@@ -79,6 +91,8 @@ final class AppModel {
     }
 
     func toggleTranscription() {
+        screenshotTask?.cancel()
+        ScreenshotCapture.cancel()
         if isRecording {
             finishRecordingAndTranscribe()
             return
@@ -180,6 +194,55 @@ final class AppModel {
         audioRecorder.cancel()
         if showToast {
             toastController.show(message: "Recording cancelled", isError: false)
+        }
+    }
+
+    func readScreenshot() {
+        if isRecording {
+            cancelRecording(showToast: false)
+        }
+        transcribeTask?.cancel()
+        isTranscribing = false
+        fetchTask?.cancel()
+        screenshotTask?.cancel()
+        ScreenshotCapture.cancel()
+
+        guard KeychainService.hasAPIKey else {
+            openSettings?()
+            return
+        }
+
+        screenshotTask = Task {
+            if !ScreenshotCapture.hasScreenRecordingAccess {
+                let granted = ScreenshotCapture.requestScreenRecordingAccess()
+                guard granted else {
+                    toastController.show(message: "Screen Recording access is required.", isError: true)
+                    return
+                }
+            }
+
+            let url = await ScreenshotCapture.captureInteractive()
+            guard !Task.isCancelled else { return }
+            guard let url else { return }
+
+            defer { try? FileManager.default.removeItem(at: url) }
+
+            toastController.show(message: "Reading image…", isError: false, autoDismiss: false)
+
+            do {
+                let text = try await openAIService.extractText(fromImageAt: url)
+                guard !Task.isCancelled else { return }
+                guard let text else {
+                    toastController.show(message: "No text found", isError: false)
+                    return
+                }
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(text, forType: .string)
+                toastController.show(message: "Copied to clipboard", isError: false)
+            } catch {
+                guard !Task.isCancelled else { return }
+                toastController.show(message: error.localizedDescription, isError: true)
+            }
         }
     }
 }
