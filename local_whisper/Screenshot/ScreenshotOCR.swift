@@ -54,7 +54,7 @@ final class ScreenshotOCR {
 
             do {
                 let jpeg = try Self.jpegData(from: url)
-                let text = try await openAI.extractText(fromJPEG: jpeg, apiKey: apiKey)
+                let text = try await openAI.extractText(fromJPEG: jpeg, apiKey: apiKey, model: ModelSettings.chat)
                 guard !Task.isCancelled else { return }
                 guard let text else {
                     toast.show(message: "No text found", isError: false)

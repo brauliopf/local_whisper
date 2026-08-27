@@ -128,7 +128,7 @@ final class VoiceTranscription {
                 guard let apiKey = keychain.loadAPIKey(), !apiKey.isEmpty else {
                     throw OpenAIError.missingAPIKey
                 }
-                let text = try await openAI.transcribeAudio(at: url, apiKey: apiKey)
+                let text = try await openAI.transcribeAudio(at: url, apiKey: apiKey, model: ModelSettings.transcribe)
                 guard !Task.isCancelled else { return }
                 Clipboard.copy(text)
                 toast.show(message: "Copied to clipboard", isError: false)

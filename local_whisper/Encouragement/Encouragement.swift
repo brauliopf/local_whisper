@@ -36,7 +36,7 @@ final class Encouragement {
 
         task = Task {
             do {
-                let message = try await openAI.fetchEncouragement(apiKey: apiKey)
+                let message = try await openAI.fetchEncouragement(apiKey: apiKey, model: ModelSettings.chat)
                 guard !Task.isCancelled else { return }
                 toast.show(message: message, isError: false)
             } catch {

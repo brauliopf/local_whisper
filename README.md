@@ -5,10 +5,10 @@ A macOS **menu bar** app (no Dock icon) that stays out of the way and does three
 | Shortcut | Action |
 |---|---|
 | **⌃⌥E** | Fetch a short encouragement from OpenAI and show it in a toast |
-| **⌃⌥W** | Record audio (tap again to stop, Escape to cancel), transcribe with `gpt-4o-mini-transcribe`, copy text to the clipboard |
-| **⌃⌥R** | System screenshot picker (drag a region; **Space** for a window; **Escape** to cancel), extract text with `gpt-4o-mini`, copy to the clipboard |
+| **⌃⌥W** | Record audio (tap again to stop, Escape to cancel), transcribe, copy text to the clipboard |
+| **⌃⌥R** | System screenshot picker (drag a region; **Space** for a window; **Escape** to cancel), extract text, copy to the clipboard |
 
-The OpenAI API key is entered in **Settings** and stored in the **macOS Keychain**.
+The OpenAI API key is entered in **Settings** and stored in the **macOS Keychain**. Chat and transcription models are chosen there too (defaults `gpt-4o-mini` and `gpt-4o-mini-transcribe`).
 
 ---
 
@@ -72,7 +72,7 @@ The bundle ID is `brauliopf.local-whisper`. If signing fails, change it to somet
 
 **Product → Run** (`⌘R`). Look for the **sparkles** icon in the menu bar.
 
-**Settings…** → paste your OpenAI API key → **Save**.
+**Settings…** → paste your OpenAI API key → **Save**. Optionally pick **Chat** and **Transcribe** models (fetched from OpenAI).
 
 ### 4. Command-line build
 
