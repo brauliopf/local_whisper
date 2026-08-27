@@ -25,9 +25,19 @@ actor OpenAIClient: OpenAIClienting {
         self.decoder = JSONDecoder()
     }
 
-    func fetchEncouragement(apiKey: String) async throws -> String {
+    func listModels(apiKey: String) async throws -> [String] {
+        var request = URLRequest(url: OpenAIAPI.models)
+        request.httpMethod = "GET"
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.timeoutInterval = 20
+        let data = try await send(request, failurePrefix: "Couldn't load models")
+        let decoded = try decoder.decode(OpenAIAPI.ModelsResponse.self, from: data)
+        return decoded.data.map(\.id)
+    }
+
+    func fetchEncouragement(apiKey: String, model: String) async throws -> String {
         let requestBody = OpenAIAPI.ChatCompletionRequest(
-            model: "gpt-4o-mini",
+            model: model,
             messages: [
                 .init(role: "system", content: .text(Self.encouragementSystemPrompt)),
                 .init(role: "user", content: .text("Give me a word of encouragement.")),
@@ -40,7 +50,7 @@ actor OpenAIClient: OpenAIClienting {
         return text
     }
 
-    func transcribeAudio(at fileURL: URL, apiKey: String) async throws -> String {
+    func transcribeAudio(at fileURL: URL, apiKey: String, model: String) async throws -> String {
         let boundary = UUID().uuidString
         var request = URLRequest(url: OpenAIAPI.transcriptions)
         request.httpMethod = "POST"
@@ -51,7 +61,7 @@ actor OpenAIClient: OpenAIClienting {
         let fileData = try Data(contentsOf: fileURL)
         let filename = fileURL.lastPathComponent
         var body = Data()
-        Self.appendFormField("model", value: "gpt-4o-mini-transcribe", boundary: boundary, to: &body)
+        Self.appendFormField("model", value: model, boundary: boundary, to: &body)
         body.append(Data("--\(boundary)\r\n".utf8))
         body.append(Data("Content-Disposition: form-data; name=\"file\"; filename=\"\(filename)\"\r\n".utf8))
         body.append(Data("Content-Type: audio/mp4\r\n\r\n".utf8))
@@ -66,10 +76,10 @@ actor OpenAIClient: OpenAIClienting {
         return trimmed
     }
 
-    func extractText(fromJPEG jpegData: Data, apiKey: String) async throws -> String? {
+    func extractText(fromJPEG jpegData: Data, apiKey: String, model: String) async throws -> String? {
         let dataURL = "data:image/jpeg;base64,\(jpegData.base64EncodedString())"
         let requestBody = OpenAIAPI.ChatCompletionRequest(
-            model: "gpt-4o-mini",
+            model: model,
             messages: [
                 .init(
                     role: "user",
@@ -101,7 +111,7 @@ actor OpenAIClient: OpenAIClienting {
         return decoded.firstText
     }
 
-    private func send(_ request: URLRequest) async throws -> Data {
+    private func send(_ request: URLRequest, failurePrefix: String = "Couldn't fetch a message") async throws -> Data {
         let data: Data
         let response: URLResponse
         do {
@@ -116,9 +126,9 @@ actor OpenAIClient: OpenAIClienting {
 
         if http.statusCode != 200 {
             if let apiError = try? decoder.decode(OpenAIAPI.ErrorResponse.self, from: data) {
-                throw OpenAIError.apiError("Couldn't fetch a message — \(apiError.error.message)")
+                throw OpenAIError.apiError("\(failurePrefix) — \(apiError.error.message)")
             }
-            throw OpenAIError.apiError("Couldn't fetch a message — check your API key.")
+            throw OpenAIError.apiError("\(failurePrefix) — check your API key.")
         }
         return data
     }

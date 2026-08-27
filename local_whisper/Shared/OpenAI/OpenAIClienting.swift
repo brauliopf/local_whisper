@@ -21,9 +21,10 @@ nonisolated enum OpenAIError: LocalizedError, Sendable {
 }
 
 nonisolated protocol OpenAIClienting: Sendable {
-    func fetchEncouragement(apiKey: String) async throws -> String
-    func transcribeAudio(at fileURL: URL, apiKey: String) async throws -> String
-    func extractText(fromJPEG data: Data, apiKey: String) async throws -> String?
+    func listModels(apiKey: String) async throws -> [String]
+    func fetchEncouragement(apiKey: String, model: String) async throws -> String
+    func transcribeAudio(at fileURL: URL, apiKey: String, model: String) async throws -> String
+    func extractText(fromJPEG data: Data, apiKey: String, model: String) async throws -> String?
 }
 
 nonisolated protocol Keychaining: Sendable {
