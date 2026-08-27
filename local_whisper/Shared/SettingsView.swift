@@ -1,8 +1,13 @@
 import SwiftUI
 
 struct SettingsView: View {
+    private let keychain: any Keychaining
     @State private var apiKey = ""
     @State private var statusMessage: String?
+
+    init(keychain: any Keychaining = KeychainStore()) {
+        self.keychain = keychain
+    }
 
     var body: some View {
         Form {
@@ -15,7 +20,7 @@ struct SettingsView: View {
 
             HStack {
                 Button("Save") {
-                    if KeychainService.saveAPIKey(apiKey) {
+                    if keychain.saveAPIKey(apiKey) {
                         statusMessage = "Saved."
                     } else {
                         statusMessage = "Couldn't save the key."
@@ -33,7 +38,7 @@ struct SettingsView: View {
         .padding()
         .frame(width: 440)
         .onAppear {
-            apiKey = KeychainService.loadAPIKey() ?? ""
+            apiKey = keychain.loadAPIKey() ?? ""
         }
     }
 }

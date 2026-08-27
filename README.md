@@ -20,16 +20,11 @@ The Xcode project uses a **file-system synchronized** group: Swift files under `
 local_whisper/
 ├── local_whisper.xcodeproj/     Xcode project
 ├── local_whisper/               App sources (synced into the target)
-│   ├── local_whisperApp.swift   SwiftUI entry: MenuBarExtra + Settings scene
-│   ├── AppDelegate.swift        Holds AppModel; starts hotkeys after launch
-│   ├── AppModel.swift           Orchestrates shortcuts, recording, screenshot, toasts
-│   ├── GlobalHotkeyManager.swift  Carbon global hotkeys (⌃⌥E / ⌃⌥W / ⌃⌥R, Escape while recording)
-│   ├── OpenAIService.swift      Chat, audio transcription, vision OCR
-│   ├── KeychainService.swift    API key in Keychain (not in the repo)
-│   ├── SettingsView.swift       API key UI
-│   ├── AudioRecorder.swift      Microphone capture → temp .m4a
-│   ├── ScreenshotCapture.swift  `screencapture -i` + Screen Recording TCC
-│   ├── ToastPanelController.swift / ToastView.swift  Bottom-center floating toast
+│   ├── App/                     SwiftUI entry, AppDelegate, AppCoordinator
+│   ├── Encouragement/           ⌃⌥E toast
+│   ├── Voice/                   ⌃⌥W record + transcribe
+│   ├── Screenshot/              ⌃⌥R OCR
+│   ├── Shared/                  OpenAI client, Keychain, hotkeys, toast, Settings
 │   ├── local_whisper.entitlements  Hardened Runtime audio-input
 │   └── Assets.xcassets
 ├── .github/pull_request_template.md
@@ -39,9 +34,9 @@ local_whisper/
 **How the pieces fit**
 
 - `local_whisperApp` is a `MenuBarExtra` agent (`LSUIElement`). There is no main window.
-- `AppDelegate` owns a single `AppModel`. Hotkeys register in `applicationDidFinishLaunching` so launch is not blocked.
-- `AppModel` is the coordinator: last-action-wins between encouragement, voice, and screenshot; toasts; clipboard; Settings when the key is missing.
-- Network calls go through `OpenAIService`. Secrets never live in source files.
+- `AppDelegate` owns a single `AppCoordinator`. Hotkeys register in `applicationDidFinishLaunching` so launch is not blocked.
+- `AppCoordinator` is last-action-wins between encouragement, voice, and screenshot; toasts; clipboard; Settings when the key is missing.
+- Views stay thin. Each feature is an `@Observable` type. Network calls go through one `OpenAIClient` actor with `Codable` request types. Secrets never live in source files.
 
 ---
 
