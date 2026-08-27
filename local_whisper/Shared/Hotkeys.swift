@@ -2,7 +2,7 @@ import AppKit
 import Carbon
 
 /// System-wide Carbon hotkeys — does not need Accessibility.
-final class GlobalHotkeyManager {
+final class Hotkeys {
     var onEncouragement: (() -> Void)?
     var onTranscribe: (() -> Void)?
     var onScreenshot: (() -> Void)?
@@ -51,13 +51,13 @@ final class GlobalHotkeyManager {
                 )
                 guard status == noErr else { return OSStatus(eventNotHandledErr) }
 
-                let manager = Unmanaged<GlobalHotkeyManager>.fromOpaque(userData).takeUnretainedValue()
+                let hotkeys = Unmanaged<Hotkeys>.fromOpaque(userData).takeUnretainedValue()
                 DispatchQueue.main.async {
                     switch hotKeyID.id {
-                    case 1: manager.onEncouragement?()
-                    case 2: manager.onTranscribe?()
-                    case 3: manager.onEscape?()
-                    case 4: manager.onScreenshot?()
+                    case 1: hotkeys.onEncouragement?()
+                    case 2: hotkeys.onTranscribe?()
+                    case 3: hotkeys.onEscape?()
+                    case 4: hotkeys.onScreenshot?()
                     default: break
                     }
                 }

@@ -4,24 +4,24 @@ import SwiftUI
 struct local_whisperApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
-    private var appModel: AppModel { appDelegate.appModel }
+    private var coordinator: AppCoordinator { appDelegate.coordinator }
 
     var body: some Scene {
         MenuBarExtra {
-            AppModelSettingsBridge(appModel: appModel)
+            CoordinatorSettingsBridge(coordinator: coordinator)
 
             Button("Show Encouragement") {
-                appModel.showEncouragement()
+                coordinator.showEncouragement()
             }
             .keyboardShortcut("e", modifiers: [.control, .option])
 
             Button("Transcribe") {
-                appModel.toggleTranscription()
+                coordinator.toggleTranscription()
             }
             .keyboardShortcut("w", modifiers: [.control, .option])
 
             Button("Read screenshot") {
-                appModel.readScreenshot()
+                coordinator.readScreenshot()
             }
             .keyboardShortcut("r", modifiers: [.control, .option])
 
@@ -46,15 +46,15 @@ struct local_whisperApp: App {
     }
 }
 
-private struct AppModelSettingsBridge: View {
-    @Bindable var appModel: AppModel
+private struct CoordinatorSettingsBridge: View {
+    @Bindable var coordinator: AppCoordinator
     @Environment(\.openSettings) private var openSettings
 
     var body: some View {
         Color.clear
             .frame(width: 0, height: 0)
             .onAppear {
-                appModel.openSettings = { openSettings() }
+                coordinator.openSettings = { openSettings() }
             }
     }
 }

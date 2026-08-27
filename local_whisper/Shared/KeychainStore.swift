@@ -1,15 +1,13 @@
 import Foundation
 import Security
 
-enum KeychainService {
-    private static let service = "brauliopf.local-whisper"
-    private static let account = "openai-api-key"
+struct KeychainStore: Keychaining, Sendable {
+    private let service = "brauliopf.local-whisper"
+    private let account = "openai-api-key"
 
-    static var hasAPIKey: Bool {
-        loadAPIKey() != nil
-    }
+    var hasAPIKey: Bool { loadAPIKey() != nil }
 
-    static func loadAPIKey() -> String? {
+    func loadAPIKey() -> String? {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -25,7 +23,7 @@ enum KeychainService {
     }
 
     @discardableResult
-    static func saveAPIKey(_ key: String) -> Bool {
+    func saveAPIKey(_ key: String) -> Bool {
         deleteAPIKey()
 
         let query: [String: Any] = [
@@ -39,7 +37,7 @@ enum KeychainService {
     }
 
     @discardableResult
-    static func deleteAPIKey() -> Bool {
+    func deleteAPIKey() -> Bool {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
