@@ -45,7 +45,7 @@ final class AppCoordinator {
             self?.readScreenshot()
         }
         hotkeys.onCountdown = { [weak self] in
-            self?.countdown.handleHotkey()
+            self?.countdown.start()
         }
         hotkeys.onEscape = { [weak self] in
             self?.voice.cancelRecording()
