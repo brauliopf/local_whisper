@@ -4,88 +4,9 @@ import SwiftUI
 struct local_whisperApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
-    private var coordinator: AppCoordinator { appDelegate.coordinator }
-
     var body: some Scene {
-        MenuBarExtra {
-            CoordinatorSettingsBridge(coordinator: coordinator)
-
-            Button("Show Encouragement") {
-                coordinator.showEncouragement()
-            }
-            .keyboardShortcut("e", modifiers: [.control, .option])
-
-            Button("Transcribe") {
-                coordinator.toggleTranscription()
-            }
-            .keyboardShortcut("w", modifiers: [.control, .option])
-
-            Button("Read screenshot") {
-                coordinator.readScreenshot()
-            }
-            .keyboardShortcut("r", modifiers: [.control, .option])
-
-            TimerMenuItems(countdown: coordinator.countdown)
-
-            Divider()
-
-            SettingsLink()
-
-            Divider()
-
-            Button("Quit") {
-                NSApplication.shared.terminate(nil)
-            }
-            .keyboardShortcut("q")
-        } label: {
-            Image(systemName: "sparkles")
-        }
-        .menuBarExtraStyle(.menu)
-
         Settings {
             SettingsView()
         }
-    }
-}
-
-private struct TimerMenuItems: View {
-    @Bindable var countdown: Countdown
-
-    var body: some View {
-        if countdown.isRunning {
-            Button {
-                countdown.cancel()
-            } label: {
-                HStack {
-                    Text("Cancel Timer")
-                    Spacer(minLength: 16)
-                    Text(countdown.remainingLabel ?? "")
-                        .monospacedDigit()
-                        .foregroundStyle(.secondary)
-                }
-                .frame(minWidth: 220, maxWidth: .infinity, alignment: .leading)
-            }
-            .onAppear {
-                countdown.refresh()
-            }
-        } else {
-            Button("Start Timer") {
-                countdown.start()
-            }
-            .keyboardShortcut("t", modifiers: [.control, .option])
-        }
-    }
-}
-
-private struct CoordinatorSettingsBridge: View {
-    @Bindable var coordinator: AppCoordinator
-    @Environment(\.openSettings) private var openSettings
-
-    var body: some View {
-        Color.clear
-            .frame(width: 0, height: 0)
-            .onAppear {
-                coordinator.openSettings = { openSettings() }
-            }
     }
 }
