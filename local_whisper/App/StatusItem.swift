@@ -4,12 +4,12 @@ import Observation
 @MainActor
 final class StatusItem: NSObject {
     private let coordinator: AppCoordinator
-    private let item: NSStatusItem
+    private let statusItem: NSStatusItem
     private var menuShowsRunning: Bool?
 
     init(coordinator: AppCoordinator) {
         self.coordinator = coordinator
-        self.item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+        self.statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         super.init()
 
         coordinator.openSettings = { [weak self] in
@@ -18,7 +18,7 @@ final class StatusItem: NSObject {
 
         let image = NSImage(systemSymbolName: "sparkles", accessibilityDescription: "local_whisper")
         image?.isTemplate = true
-        item.button?.image = image
+        statusItem.button?.image = image
 
         observe()
     }
@@ -35,24 +35,16 @@ final class StatusItem: NSObject {
     }
 
     private func applyRemaining(_ remaining: String?) {
-        guard let button = item.button else { return }
+        guard let button = statusItem.button else { return }
         if let remaining {
-            item.length = NSStatusItem.variableLength
+            statusItem.length = NSStatusItem.variableLength
             button.imagePosition = .imageLeft
-            button.attributedTitle = NSAttributedString(
-                string: remaining,
-                attributes: [
-                    .font: NSFont.monospacedDigitSystemFont(
-                        ofSize: NSFont.systemFontSize,
-                        weight: .regular
-                    )
-                ]
-            )
+            button.font = NSFont.monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
+            button.title = remaining
         } else {
-            button.attributedTitle = NSAttributedString(string: "")
             button.title = ""
             button.imagePosition = .imageOnly
-            item.length = NSStatusItem.squareLength
+            statusItem.length = NSStatusItem.squareLength
         }
     }
 
@@ -61,22 +53,22 @@ final class StatusItem: NSObject {
         menuShowsRunning = isRunning
 
         let menu = NSMenu()
-        menu.addItem(item("Show Encouragement", key: "e", action: #selector(showEncouragement)))
-        menu.addItem(item("Transcribe", key: "w", action: #selector(transcribe)))
-        menu.addItem(item("Read screenshot", key: "r", action: #selector(readScreenshot)))
+        menu.addItem(menuItem("Show Encouragement", key: "e", action: #selector(showEncouragement)))
+        menu.addItem(menuItem("Transcribe", key: "w", action: #selector(transcribe)))
+        menu.addItem(menuItem("Read screenshot", key: "r", action: #selector(readScreenshot)))
         if isRunning {
-            menu.addItem(item("Cancel Timer", key: nil, action: #selector(cancelTimer)))
+            menu.addItem(menuItem("Cancel Timer", key: nil, action: #selector(cancelTimer)))
         } else {
-            menu.addItem(item("Start Timer", key: "t", action: #selector(startTimer)))
+            menu.addItem(menuItem("Start Timer", key: "t", action: #selector(startTimer)))
         }
         menu.addItem(.separator())
-        menu.addItem(item("Settings…", key: nil, action: #selector(openSettings)))
+        menu.addItem(menuItem("Settings…", key: nil, action: #selector(openSettings)))
         menu.addItem(.separator())
-        menu.addItem(item("Quit", key: "q", modifiers: .command, action: #selector(quit)))
-        self.item.menu = menu
+        menu.addItem(menuItem("Quit", key: "q", modifiers: .command, action: #selector(quit)))
+        statusItem.menu = menu
     }
 
-    private func item(
+    private func menuItem(
         _ title: String,
         key: String?,
         modifiers: NSEvent.ModifierFlags = [.control, .option],
