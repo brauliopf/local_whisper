@@ -1,11 +1,12 @@
 import AppKit
 
+@MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     let coordinator = AppCoordinator()
+    private var statusItem: StatusItem?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        Task { @MainActor in
-            coordinator.finishLaunching()
-        }
+        statusItem = StatusItem(coordinator: coordinator)
+        coordinator.finishLaunching()
     }
 }

@@ -16,6 +16,7 @@ final class AppCoordinator {
     private let encouragement: Encouragement
     private let voice: VoiceTranscription
     private let screenshot: ScreenshotOCR
+    let countdown: Countdown
     private var didFinishLaunching = false
 
     convenience init() {
@@ -29,6 +30,7 @@ final class AppCoordinator {
         self.encouragement = Encouragement(openAI: openAI, keychain: keychain, toast: toast)
         self.voice = VoiceTranscription(openAI: openAI, keychain: keychain, toast: toast)
         self.screenshot = ScreenshotOCR(openAI: openAI, keychain: keychain, toast: toast)
+        self.countdown = Countdown(toast: toast)
 
         voice.setEscapeEnabled = { [weak self] enabled in
             self?.hotkeys.setEscapeEnabled(enabled)
@@ -41,6 +43,9 @@ final class AppCoordinator {
         }
         hotkeys.onScreenshot = { [weak self] in
             self?.readScreenshot()
+        }
+        hotkeys.onCountdown = { [weak self] in
+            self?.countdown.start()
         }
         hotkeys.onEscape = { [weak self] in
             self?.voice.cancelRecording()
@@ -67,6 +72,12 @@ final class AppCoordinator {
         if !registration.screenshot {
             toast.show(
                 message: "Couldn't register ⌃⌥R — another app may already use that shortcut.",
+                isError: true
+            )
+        }
+        if !registration.countdown {
+            toast.show(
+                message: "Couldn't register ⌃⌥T — another app may already use that shortcut.",
                 isError: true
             )
         }

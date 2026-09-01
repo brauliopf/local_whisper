@@ -7,11 +7,11 @@ final class ToastPresenter {
     private var hostingView: NSHostingView<ToastView>?
     private var dismissTask: Task<Void, Never>?
 
-    func show(message: String, isError: Bool, autoDismiss: Bool = true) {
+    func show(message: String, isError: Bool, systemImage: String? = nil, autoDismiss: Bool = true) {
         dismissTask?.cancel()
 
         let screen = screenForCursor()
-        let toastView = ToastView(message: message, isError: isError)
+        let toastView = ToastView(message: message, isError: isError, systemImage: systemImage)
 
         if panel == nil {
             let panel = NSPanel(
