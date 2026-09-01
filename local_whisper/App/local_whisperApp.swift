@@ -25,6 +25,8 @@ struct local_whisperApp: App {
             }
             .keyboardShortcut("r", modifiers: [.control, .option])
 
+            TimerMenuItems(countdown: coordinator.countdown)
+
             Divider()
 
             SettingsLink()
@@ -42,6 +44,24 @@ struct local_whisperApp: App {
 
         Settings {
             SettingsView()
+        }
+    }
+}
+
+private struct TimerMenuItems: View {
+    @Bindable var countdown: Countdown
+
+    var body: some View {
+        if countdown.isRunning {
+            Text(countdown.remainingLabel ?? "")
+            Button("Cancel Timer") {
+                countdown.cancel()
+            }
+        } else {
+            Button("Start Timer") {
+                countdown.start()
+            }
+            .keyboardShortcut("t", modifiers: [.control, .option])
         }
     }
 }

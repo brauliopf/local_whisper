@@ -1,12 +1,13 @@
 # local_whisper
 
-A macOS **menu bar** app (no Dock icon) that stays out of the way and does three things from global shortcuts:
+A macOS **menu bar** app (no Dock icon) that stays out of the way and does four things from global shortcuts:
 
 | Shortcut | Action |
 |---|---|
 | **⌃⌥E** | Fetch a short encouragement from OpenAI and show it in a toast |
 | **⌃⌥W** | Record audio (tap again to stop, Escape to cancel), transcribe, copy text to the clipboard |
 | **⌃⌥R** | System screenshot picker (drag a region; **Space** for a window; **Escape** to cancel), extract text, copy to the clipboard |
+| **⌃⌥T** | Start a 20-minute timer (tap again for remaining time; cancel from the menu) |
 
 The OpenAI API key is entered in **Settings** and stored in the **macOS Keychain**. Chat and transcription models are chosen there too (defaults `gpt-4o-mini` and `gpt-4o-mini-transcribe`).
 
@@ -24,6 +25,7 @@ local_whisper/
 │   ├── Encouragement/           ⌃⌥E toast
 │   ├── Voice/                   ⌃⌥W record + transcribe
 │   ├── Screenshot/              ⌃⌥R OCR
+│   ├── Countdown/               ⌃⌥T 20-minute timer
 │   ├── Shared/                  OpenAI client, Keychain, hotkeys, toast, Settings
 │   ├── local_whisper.entitlements  Hardened Runtime audio-input
 │   └── Assets.xcassets
@@ -35,7 +37,7 @@ local_whisper/
 
 - `local_whisperApp` is a `MenuBarExtra` agent (`LSUIElement`). There is no main window.
 - `AppDelegate` owns a single `AppCoordinator`. Hotkeys register in `applicationDidFinishLaunching` so launch is not blocked.
-- `AppCoordinator` is last-action-wins between encouragement, voice, and screenshot; toasts; clipboard; Settings when the key is missing.
+- `AppCoordinator` is last-action-wins between encouragement, voice, and screenshot; the timer runs independently; toasts; clipboard; Settings when the key is missing.
 - Views stay thin. Each feature is an `@Observable` type. Network calls go through one `OpenAIClient` actor with `Codable` request types. Secrets never live in source files.
 
 ---

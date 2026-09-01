@@ -6,11 +6,13 @@ final class Hotkeys {
     var onEncouragement: (() -> Void)?
     var onTranscribe: (() -> Void)?
     var onScreenshot: (() -> Void)?
+    var onCountdown: (() -> Void)?
     var onEscape: (() -> Void)?
 
     private var encouragementHotKeyRef: EventHotKeyRef?
     private var transcribeHotKeyRef: EventHotKeyRef?
     private var screenshotHotKeyRef: EventHotKeyRef?
+    private var countdownHotKeyRef: EventHotKeyRef?
     private var escapeHotKeyRef: EventHotKeyRef?
     private var eventHandler: EventHandlerRef?
 
@@ -18,12 +20,14 @@ final class Hotkeys {
     private static let encouragementID = EventHotKeyID(signature: signature, id: 1)
     private static let transcribeID = EventHotKeyID(signature: signature, id: 2)
     private static let screenshotID = EventHotKeyID(signature: signature, id: 4)
+    private static let countdownID = EventHotKeyID(signature: signature, id: 5)
     private static let escapeID = EventHotKeyID(signature: signature, id: 3)
 
     struct Registration {
         var encouragement = false
         var transcribe = false
         var screenshot = false
+        var countdown = false
     }
 
     func start() -> Registration {
@@ -58,6 +62,7 @@ final class Hotkeys {
                     case 2: hotkeys.onTranscribe?()
                     case 3: hotkeys.onEscape?()
                     case 4: hotkeys.onScreenshot?()
+                    case 5: hotkeys.onCountdown?()
                     default: break
                     }
                 }
@@ -96,6 +101,14 @@ final class Hotkeys {
             0,
             &screenshotHotKeyRef
         ) == noErr
+        result.countdown = RegisterEventHotKey(
+            UInt32(kVK_ANSI_T),
+            UInt32(controlKey | optionKey),
+            Self.countdownID,
+            GetApplicationEventTarget(),
+            0,
+            &countdownHotKeyRef
+        ) == noErr
         return result
     }
 
@@ -128,12 +141,16 @@ final class Hotkeys {
         if let screenshotHotKeyRef {
             UnregisterEventHotKey(screenshotHotKeyRef)
         }
+        if let countdownHotKeyRef {
+            UnregisterEventHotKey(countdownHotKeyRef)
+        }
         if let eventHandler {
             RemoveEventHandler(eventHandler)
         }
         encouragementHotKeyRef = nil
         transcribeHotKeyRef = nil
         screenshotHotKeyRef = nil
+        countdownHotKeyRef = nil
         eventHandler = nil
     }
 
