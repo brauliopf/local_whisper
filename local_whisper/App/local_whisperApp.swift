@@ -53,9 +53,20 @@ private struct TimerMenuItems: View {
 
     var body: some View {
         if countdown.isRunning {
-            Text(countdown.remainingLabel ?? "")
-            Button("Cancel Timer") {
+            Button {
                 countdown.cancel()
+            } label: {
+                HStack {
+                    Text("Cancel Timer")
+                    Spacer(minLength: 16)
+                    Text(countdown.remainingLabel ?? "")
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
+                }
+                .frame(minWidth: 220, maxWidth: .infinity, alignment: .leading)
+            }
+            .onAppear {
+                countdown.refresh()
             }
         } else {
             Button("Start Timer") {

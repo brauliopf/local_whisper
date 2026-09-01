@@ -62,6 +62,7 @@ final class ToastPresenter {
 
         guard let panel, let hostingView else { return }
 
+        hostingView.layoutSubtreeIfNeeded()
         applySize(hostingView.fittingSize)
         panel.orderFrontRegardless()
 
@@ -133,6 +134,9 @@ private struct ToastRoot<Content: View>: View {
                     Color.clear.preference(key: ToastSizeKey.self, value: geo.size)
                 }
             }
-            .onPreferenceChange(ToastSizeKey.self, perform: onSizeChange)
+            .onPreferenceChange(ToastSizeKey.self) { size in
+                guard size.width > 0, size.height > 0 else { return }
+                onSizeChange(size)
+            }
     }
 }

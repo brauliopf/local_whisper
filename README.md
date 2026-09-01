@@ -7,7 +7,7 @@ A macOS **menu bar** app (no Dock icon) that stays out of the way and does four 
 | **⌃⌥E** | Fetch a short encouragement from OpenAI and show it in a toast |
 | **⌃⌥W** | Record audio (tap again to stop, Escape to cancel), transcribe, copy text to the clipboard |
 | **⌃⌥R** | System screenshot picker (drag a region; **Space** for a window; **Escape** to cancel), extract text, copy to the clipboard |
-| **⌃⌥T** | Start a 20-minute timer (tap again for remaining time; cancel from the menu) |
+| **⌃⌥T** | Start a timer (default 20 minutes; length configurable in Settings) |
 
 The OpenAI API key is entered in **Settings** and stored in the **macOS Keychain**. Chat and transcription models are chosen there too (defaults `gpt-4o-mini` and `gpt-4o-mini-transcribe`).
 

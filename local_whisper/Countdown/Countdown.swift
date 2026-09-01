@@ -4,8 +4,6 @@ import SwiftUI
 @MainActor
 @Observable
 final class Countdown {
-    static let duration: TimeInterval = 20 * 60
-
     private(set) var remainingLabel: String?
     private(set) var isRunning = false
 
@@ -36,7 +34,7 @@ final class Countdown {
     func start() {
         guard !isRunning else { return }
 
-        deadline = Date().addingTimeInterval(Self.duration)
+        deadline = Date().addingTimeInterval(TimerSettings.duration)
         isRunning = true
         syncFromDeadline()
 
@@ -56,6 +54,10 @@ final class Countdown {
         remainingLabel = nil
         isRunning = false
         toast.hide(id: Self.toastID)
+    }
+
+    func refresh() {
+        syncFromDeadline()
     }
 
     private func syncFromDeadline() {
@@ -94,12 +96,9 @@ private struct ToastLabel: View {
     @Bindable var countdown: Countdown
 
     var body: some View {
-        Text(Countdown.format(Countdown.duration))
+        Text(countdown.remainingLabel ?? "0:00")
             .monospacedDigit()
-            .hidden()
-            .overlay {
-                Text(countdown.remainingLabel ?? "")
-                    .monospacedDigit()
-            }
+            .lineLimit(1)
+            .fixedSize(horizontal: true, vertical: false)
     }
 }

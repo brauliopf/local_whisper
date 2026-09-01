@@ -14,6 +14,8 @@ struct SettingsView: View {
     @State private var modelsError: String?
     @State private var pickersEnabled = false
     @State private var loadTask: Task<Void, Never>?
+    @State private var countdownMinutesText = String(TimerSettings.minutes)
+    @FocusState private var countdownMinutesFocused: Bool
 
     init(
         keychain: any Keychaining = KeychainStore(),
@@ -52,6 +54,30 @@ struct SettingsView: View {
             }
 
             Section {
+                HStack {
+                    Text("Countdown time length")
+                    Spacer()
+                    TextField("", text: $countdownMinutesText)
+                        .frame(width: 48)
+                        .multilineTextAlignment(.trailing)
+                        .focused($countdownMinutesFocused)
+                        .onSubmit(commitCountdownMinutes)
+                    Stepper("", onIncrement: {
+                        nudgeCountdownMinutes(by: 1)
+                    }, onDecrement: {
+                        nudgeCountdownMinutes(by: -1)
+                    })
+                    .labelsHidden()
+                    Text("min")
+                        .foregroundStyle(.secondary)
+                }
+            } header: {
+                Text("Configurations")
+            } footer: {
+                Text("1–1440 minutes. Applies the next time you start the timer.")
+            }
+
+            Section {
                 Picker("Chat", selection: $chatModel) {
                     ForEach(chatIDs, id: \.self) { id in
                         Text(id).tag(id)
@@ -85,7 +111,13 @@ struct SettingsView: View {
             transcribeModel = ModelSettings.transcribe
             chatIDs = [chatModel]
             transcribeIDs = [transcribeModel]
+            countdownMinutesText = String(TimerSettings.minutes)
             loadModels()
+        }
+        .onChange(of: countdownMinutesFocused) { _, focused in
+            if !focused {
+                commitCountdownMinutes()
+            }
         }
         .onChange(of: chatModel) { _, newValue in
             ModelSettings.chat = newValue
@@ -94,8 +126,23 @@ struct SettingsView: View {
             ModelSettings.transcribe = newValue
         }
         .onDisappear {
+            commitCountdownMinutes()
             loadTask?.cancel()
         }
+    }
+
+    private func nudgeCountdownMinutes(by delta: Int) {
+        let current = Int(countdownMinutesText.trimmingCharacters(in: .whitespaces)) ?? TimerSettings.minutes
+        let next = TimerSettings.clamp(current + delta)
+        countdownMinutesText = String(next)
+    }
+
+    private func commitCountdownMinutes() {
+        let trimmed = countdownMinutesText.trimmingCharacters(in: .whitespaces)
+        let parsed = Int(trimmed)
+        let minutes = TimerSettings.clamp(parsed ?? TimerSettings.minutes)
+        TimerSettings.minutes = minutes
+        countdownMinutesText = String(minutes)
     }
 
     private func loadModels() {
