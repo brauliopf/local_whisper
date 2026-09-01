@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 
 @MainActor
 @Observable
@@ -7,6 +8,8 @@ final class Countdown {
 
     private(set) var remainingLabel: String?
     private(set) var isRunning = false
+
+    private static let toastID = "countdown"
 
     private let toast: ToastPresenter
     private var deadline: Date?
@@ -19,8 +22,11 @@ final class Countdown {
     func handleHotkey() {
         if isRunning {
             syncFromDeadline()
-            if let remainingLabel {
-                toast.show(message: remainingLabel, isError: false)
+            guard remainingLabel != nil else { return }
+            toast.show(id: Self.toastID) {
+                ToastView {
+                    ToastLabel(countdown: self)
+                }
             }
         } else {
             start()
@@ -49,6 +55,7 @@ final class Countdown {
         deadline = nil
         remainingLabel = nil
         isRunning = false
+        toast.hide(id: Self.toastID)
     }
 
     private func syncFromDeadline() {
@@ -77,8 +84,22 @@ final class Countdown {
         toast.show(message: "Timer complete", isError: false, systemImage: "checkmark")
     }
 
-    private static func format(_ remaining: TimeInterval) -> String {
+    fileprivate static func format(_ remaining: TimeInterval) -> String {
         let seconds = Int(ceil(remaining))
         return String(format: "%d:%02d", seconds / 60, seconds % 60)
+    }
+}
+
+private struct ToastLabel: View {
+    @Bindable var countdown: Countdown
+
+    var body: some View {
+        Text(Countdown.format(Countdown.duration))
+            .monospacedDigit()
+            .hidden()
+            .overlay {
+                Text(countdown.remainingLabel ?? "")
+                    .monospacedDigit()
+            }
     }
 }
