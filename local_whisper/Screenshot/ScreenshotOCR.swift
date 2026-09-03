@@ -36,60 +36,36 @@ final class ScreenshotOCR {
         }
 
         task = Task {
-            let root = await LocalTelemetry.shared.start(
-                name: "user_operation",
-                operation: "screenshot_ocr",
-                trigger: "hotkey"
-            )
-            if !ScreenshotCapture.hasScreenRecordingAccess {
-                let granted = ScreenshotCapture.requestScreenRecordingAccess()
-                guard granted else {
-                    await LocalTelemetry.shared.finish(root, status: "error", error: "Screen Recording access denied")
-                    toast.show(message: "Screen Recording access is required.", isError: true)
-                    return
+            await Telemetry.instrument(operation: "screenshot_ocr", trigger: "hotkey") {
+                if !ScreenshotCapture.hasScreenRecordingAccess {
+                    let granted = ScreenshotCapture.requestScreenRecordingAccess()
+                    guard granted else {
+                        toast.show(message: "Screen Recording access is required.", isError: true)
+                        return
+                    }
                 }
-            }
 
-            let url = await ScreenshotCapture.captureInteractive()
-            guard !Task.isCancelled else {
-                await LocalTelemetry.shared.finish(root, status: "cancelled")
-                return
-            }
-            guard let url else {
-                await LocalTelemetry.shared.finish(root, status: "cancelled")
-                return
-            }
+                let url = await ScreenshotCapture.captureInteractive()
+                guard !Task.isCancelled, let url else { return }
 
-            defer { try? FileManager.default.removeItem(at: url) }
+                defer { try? FileManager.default.removeItem(at: url) }
+                toast.show(message: "Reading image…", isError: false, autoDismiss: false)
 
-            toast.show(message: "Reading image…", isError: false, autoDismiss: false)
-
-            do {
-                let jpeg = try Self.jpegData(from: url)
-                let childContext = await LocalTelemetry.shared.childContext(from: root)
-                let text = try await TelemetryScope.$context.withValue(childContext) {
-                    try await openAI.extractText(fromJPEG: jpeg, apiKey: apiKey, model: ModelSettings.chat)
+                do {
+                    let jpeg = try Self.jpegData(from: url)
+                    let text = try await openAI.extractText(fromJPEG: jpeg, apiKey: apiKey, model: ModelSettings.chat)
+                    guard !Task.isCancelled else { return }
+                    guard let text else {
+                        toast.show(message: "No text found", isError: false)
+                        return
+                    }
+                    Clipboard.copy(text)
+                    toast.show(message: "Copied to clipboard", isError: false)
+                } catch {
+                    guard !Task.isCancelled else { return }
+                    toast.show(message: error.localizedDescription, isError: true)
+                    throw error
                 }
-                guard !Task.isCancelled else {
-                    await LocalTelemetry.shared.finish(root, status: "cancelled")
-                    return
-                }
-                guard let text else {
-                    await LocalTelemetry.shared.finish(root)
-                    toast.show(message: "No text found", isError: false)
-                    return
-                }
-                await LocalTelemetry.shared.finish(root)
-                Clipboard.copy(text)
-                toast.show(message: "Copied to clipboard", isError: false)
-            } catch {
-                await LocalTelemetry.shared.finish(
-                    root,
-                    status: Task.isCancelled ? "cancelled" : "error",
-                    error: Task.isCancelled ? nil : error.localizedDescription
-                )
-                guard !Task.isCancelled else { return }
-                toast.show(message: error.localizedDescription, isError: true)
             }
         }
     }

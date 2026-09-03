@@ -121,62 +121,44 @@ final class VoiceTranscription {
         toast.show(message: "Making magic…", isError: false, autoDismiss: false)
 
         transcribeTask = Task {
-            let root = await LocalTelemetry.shared.start(
-                name: "user_operation",
-                operation: "audio_transcription",
-                trigger: "hotkey"
-            )
             defer {
                 isTranscribing = false
                 try? FileManager.default.removeItem(at: url)
             }
-            do {
-                guard let apiKey = keychain.loadAPIKey(), !apiKey.isEmpty else {
-                    throw OpenAIError.missingAPIKey
-                }
-                let childContext = await LocalTelemetry.shared.childContext(from: root)
-                let text = try await TelemetryScope.$context.withValue(childContext) {
-                    try await openAI.transcribeAudio(at: url, apiKey: apiKey, model: ModelSettings.transcribe)
-                }
-                guard !Task.isCancelled else {
-                    await LocalTelemetry.shared.finish(root, status: "cancelled")
-                    return
-                }
-                guard !text.isEmpty else {
-                    await LocalTelemetry.shared.finish(root)
-                    toast.show(message: "No speech detected.", isError: false)
-                    return
-                }
-                if Self.isEnglish(text) {
-                    await LocalTelemetry.shared.finish(root)
-                    Clipboard.copy(text)
-                    toast.show(message: "Copied to clipboard", isError: false)
-                    return
-                }
-                toast.show(message: "Making magic…", isError: false, autoDismiss: false)
-                let translationContext = await LocalTelemetry.shared.childContext(from: root)
-                let translated = try await TelemetryScope.$context.withValue(translationContext) {
-                    try await openAI.translateToEnglish(
+            await Telemetry.instrument(operation: "audio_transcription", trigger: "hotkey") {
+                do {
+                    guard let apiKey = keychain.loadAPIKey(), !apiKey.isEmpty else {
+                        throw OpenAIError.missingAPIKey
+                    }
+                    let text = try await openAI.transcribeAudio(
+                        at: url,
+                        apiKey: apiKey,
+                        model: ModelSettings.transcribe
+                    )
+                    guard !Task.isCancelled else { return }
+                    guard !text.isEmpty else {
+                        toast.show(message: "No speech detected.", isError: false)
+                        return
+                    }
+                    if Self.isEnglish(text) {
+                        Clipboard.copy(text)
+                        toast.show(message: "Copied to clipboard", isError: false)
+                        return
+                    }
+                    toast.show(message: "Making magic…", isError: false, autoDismiss: false)
+                    let translated = try await openAI.translateToEnglish(
                         text: text,
                         apiKey: apiKey,
                         model: ModelSettings.chat
                     )
+                    guard !Task.isCancelled else { return }
+                    Clipboard.copy(translated)
+                    toast.show(message: "Copied to clipboard", isError: false)
+                } catch {
+                    guard !Task.isCancelled else { return }
+                    toast.show(message: error.localizedDescription, isError: true)
+                    throw error
                 }
-                guard !Task.isCancelled else {
-                    await LocalTelemetry.shared.finish(root, status: "cancelled")
-                    return
-                }
-                await LocalTelemetry.shared.finish(root)
-                Clipboard.copy(translated)
-                toast.show(message: "Copied to clipboard", isError: false)
-            } catch {
-                await LocalTelemetry.shared.finish(
-                    root,
-                    status: Task.isCancelled ? "cancelled" : "error",
-                    error: Task.isCancelled ? nil : error.localizedDescription
-                )
-                guard !Task.isCancelled else { return }
-                toast.show(message: error.localizedDescription, isError: true)
             }
         }
     }

@@ -35,30 +35,16 @@ final class Encouragement {
         toast.show(message: "Thinking…", isError: false)
 
         task = Task {
-            let root = await LocalTelemetry.shared.start(
-                name: "user_operation",
-                operation: "encouragement",
-                trigger: "hotkey"
-            )
-            do {
-                let childContext = await LocalTelemetry.shared.childContext(from: root)
-                let message = try await TelemetryScope.$context.withValue(childContext) {
-                    try await openAI.fetchEncouragement(apiKey: apiKey, model: ModelSettings.chat)
+            await Telemetry.instrument(operation: "encouragement", trigger: "hotkey") {
+                do {
+                    let message = try await openAI.fetchEncouragement(apiKey: apiKey, model: ModelSettings.chat)
+                    guard !Task.isCancelled else { return }
+                    toast.show(message: message, isError: false)
+                } catch {
+                    guard !Task.isCancelled else { return }
+                    toast.show(message: error.localizedDescription, isError: true)
+                    throw error
                 }
-                guard !Task.isCancelled else {
-                    await LocalTelemetry.shared.finish(root, status: "cancelled")
-                    return
-                }
-                await LocalTelemetry.shared.finish(root)
-                toast.show(message: message, isError: false)
-            } catch {
-                await LocalTelemetry.shared.finish(
-                    root,
-                    status: Task.isCancelled ? "cancelled" : "error",
-                    error: Task.isCancelled ? nil : error.localizedDescription
-                )
-                guard !Task.isCancelled else { return }
-                toast.show(message: error.localizedDescription, isError: true)
             }
         }
     }

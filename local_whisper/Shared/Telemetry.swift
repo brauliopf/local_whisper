@@ -5,6 +5,39 @@ enum TelemetryScope {
     @TaskLocal static var context: TelemetryContext?
 }
 
+enum Telemetry {
+    static func prepare() async {
+        await LocalTelemetry.shared.prepare()
+    }
+
+    static func instrument(
+        operation: String,
+        trigger: String,
+        body: () async throws -> Void
+    ) async {
+        let root = await LocalTelemetry.shared.start(
+            name: "user_operation",
+            operation: operation,
+            trigger: trigger
+        )
+        let context = await LocalTelemetry.shared.childContext(from: root)
+
+        do {
+            try await TelemetryScope.$context.withValue(context) {
+                try await body()
+            }
+            await LocalTelemetry.shared.finish(
+                root,
+                status: Task.isCancelled ? "cancelled" : "ok"
+            )
+        } catch is CancellationError {
+            await LocalTelemetry.shared.finish(root, status: "cancelled")
+        } catch {
+            await LocalTelemetry.shared.finish(root, status: "error", error: error.localizedDescription)
+        }
+    }
+}
+
 struct TelemetryContext: Sendable {
     let traceID: String
     let parentSpanID: String?

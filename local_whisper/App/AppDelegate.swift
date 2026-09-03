@@ -9,7 +9,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem = StatusItem(coordinator: coordinator)
         coordinator.finishLaunching()
         Task {
-            await LocalTelemetry.shared.prepare()
+            await Telemetry.prepare()
         }
     }
 }
