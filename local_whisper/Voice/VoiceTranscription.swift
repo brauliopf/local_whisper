@@ -1,4 +1,5 @@
 import Foundation
+import NaturalLanguage
 
 @MainActor
 @Observable
@@ -117,7 +118,7 @@ final class VoiceTranscription {
         }
 
         isTranscribing = true
-        toast.show(message: "Transcribing…", isError: false, autoDismiss: false)
+        toast.show(message: "Making magic…", isError: false, autoDismiss: false)
 
         transcribeTask = Task {
             defer {
@@ -130,12 +131,34 @@ final class VoiceTranscription {
                 }
                 let text = try await openAI.transcribeAudio(at: url, apiKey: apiKey, model: ModelSettings.transcribe)
                 guard !Task.isCancelled else { return }
-                Clipboard.copy(text)
+                guard !text.isEmpty else {
+                    toast.show(message: "No speech detected.", isError: false)
+                    return
+                }
+                if Self.isEnglish(text) {
+                    Clipboard.copy(text)
+                    toast.show(message: "Copied to clipboard", isError: false)
+                    return
+                }
+                toast.show(message: "Making magic…", isError: false, autoDismiss: false)
+                let translated = try await openAI.translateToEnglish(
+                    text: text,
+                    apiKey: apiKey,
+                    model: ModelSettings.chat
+                )
+                guard !Task.isCancelled else { return }
+                Clipboard.copy(translated)
                 toast.show(message: "Copied to clipboard", isError: false)
             } catch {
                 guard !Task.isCancelled else { return }
                 toast.show(message: error.localizedDescription, isError: true)
             }
         }
+    }
+
+    private static func isEnglish(_ text: String) -> Bool {
+        let recognizer = NLLanguageRecognizer()
+        recognizer.processString(text)
+        return recognizer.dominantLanguage == .english
     }
 }
