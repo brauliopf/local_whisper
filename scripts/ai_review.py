@@ -21,9 +21,9 @@ Return Markdown with this exact structure:
 ### Findings
 
 List findings from highest to lowest severity. For each finding include severity
-(use critical, high, medium, or low), the file and line if available, why it matters,
-and a specific fix. If there are no findings, write "No concrete correctness or
-security findings.".
+(use critical, high, medium, or low), the file and
+line if available, why it matters, and a specific fix. If there are no findings,
+write "No concrete correctness or security findings.".
 
 ### Verification
 
@@ -48,10 +48,12 @@ def call_openai(diff: str) -> str:
             {"role": "system", "content": [{"type": "input_text", "text": SYSTEM_PROMPT}]},
             {
                 "role": "user",
-                "content": [{
-                    "type": "input_text",
-                    "text": "Review this pull-request diff:\n\n```diff\n" + diff + "\n```",
-                }],
+                "content": [
+                    {
+                        "type": "input_text",
+                        "text": "Review this pull-request diff:\n\n```diff\n" + diff + "\n```",
+                    }
+                ],
             },
         ],
         "max_output_tokens": 2_000,
@@ -68,14 +70,16 @@ def call_openai(diff: str) -> str:
     with urllib.request.urlopen(request, timeout=120) as response:
         result = json.load(response)
 
-    if result.get("output_text"):
-        return result["output_text"].strip()
+    text = result.get("output_text")
+    if text:
+        return text.strip()
 
+    output = result.get("output", [])
     parts = [
         item.get("text", "")
-        for output_item in result.get("output", [])
-        if output_item.get("type") == "message"
-        for item in output_item.get("content", [])
+        for item in output
+        if item.get("type") == "message"
+        for item in item.get("content", [])
         if item.get("type") == "output_text"
     ]
     review = "\n".join(part for part in parts if part).strip()
