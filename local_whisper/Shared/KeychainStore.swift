@@ -15,7 +15,7 @@ struct KeychainStore: Keychaining, Sendable {
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
             kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne,
+            kSecMatchLimit as String: kSecMatchLimitOne
         ]
 
         var item: CFTypeRef?
@@ -32,7 +32,7 @@ struct KeychainStore: Keychaining, Sendable {
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
-            kSecValueData as String: Data(key.utf8),
+            kSecValueData as String: Data(key.utf8)
         ]
 
         return SecItemAdd(query as CFDictionary, nil) == errSecSuccess
@@ -43,7 +43,7 @@ struct KeychainStore: Keychaining, Sendable {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
+            kSecAttrAccount as String: account
         ]
 
         let status = SecItemDelete(query as CFDictionary)

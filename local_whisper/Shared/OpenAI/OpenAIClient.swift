@@ -48,8 +48,8 @@ actor OpenAIClient: OpenAIClienting {
             model: model,
             messages: [
                 .init(role: "system", content: .text(Self.encouragementSystemPrompt)),
-                .init(role: "user", content: .text("Give me a word of encouragement.")),
-            ],
+                .init(role: "user", content: .text("Give me a word of encouragement."))
+            ]
             temperature: 0.9,
             maxTokens: 60
         )
@@ -87,7 +87,7 @@ actor OpenAIClient: OpenAIClienting {
             model: model,
             messages: [
                 .init(role: "system", content: .text(Self.translationPrompt)),
-                .init(role: "user", content: .text(text)),
+                .init(role: "user", content: .text(text))
             ],
             temperature: 0,
             maxTokens: 4096
@@ -108,9 +108,9 @@ actor OpenAIClient: OpenAIClienting {
                     role: "user",
                     content: .parts([
                         .init(type: "text", text: Self.screenshotPrompt, imageURL: nil),
-                        .init(type: "image_url", text: nil, imageURL: .init(url: dataURL)),
+                        .init(type: "image_url", text: nil, imageURL: .init(url: dataURL))
                     ])
-                ),
+                )
             ],
             temperature: 0,
             maxTokens: 4096
@@ -123,7 +123,11 @@ actor OpenAIClient: OpenAIClienting {
         return text
     }
 
-    private func chat(apiKey: String, body: OpenAIAPI.ChatCompletionRequest, timeout: TimeInterval) async throws -> String? {
+    private func chat(
+        apiKey: String,
+        body: OpenAIAPI.ChatCompletionRequest,
+        timeout: TimeInterval
+    ) async throws -> String? {
         var request = URLRequest(url: OpenAIAPI.chatCompletions)
         request.httpMethod = "POST"
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")

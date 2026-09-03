@@ -122,39 +122,41 @@ final class VoiceTranscription {
         isTranscribing = true
         toast.show(message: "Making magic…", isError: false, autoDismiss: false)
 
-        transcribeTask = Task {
-            defer {
-                isTranscribing = false
-                try? FileManager.default.removeItem(at: url)
+        transcribeTask = Task { await transcribe(url: url) }
+    }
+
+    private func transcribe(url: URL) async {
+        defer {
+            isTranscribing = false
+            try? FileManager.default.removeItem(at: url)
+        }
+        do {
+            guard let apiKey = keychain.loadAPIKey(), !apiKey.isEmpty else {
+                throw OpenAIError.missingAPIKey
             }
-            do {
-                guard let apiKey = keychain.loadAPIKey(), !apiKey.isEmpty else {
-                    throw OpenAIError.missingAPIKey
-                }
-                let text = try await openAI.transcribeAudio(at: url, apiKey: apiKey, model: ModelSettings.transcribe)
-                guard !Task.isCancelled else { return }
-                guard !text.isEmpty else {
-                    toast.show(message: "No speech detected.", isError: false)
-                    return
-                }
-                if Self.isEnglish(text) {
-                    Clipboard.copy(text)
-                    toast.show(message: "Copied to clipboard", isError: false)
-                    return
-                }
-                toast.show(message: "Making magic…", isError: false, autoDismiss: false)
-                let translated = try await openAI.translateToEnglish(
-                    text: text,
-                    apiKey: apiKey,
-                    model: ModelSettings.chat
-                )
-                guard !Task.isCancelled else { return }
-                Clipboard.copy(translated)
+            let text = try await openAI.transcribeAudio(at: url, apiKey: apiKey, model: ModelSettings.transcribe)
+            guard !Task.isCancelled else { return }
+            guard !text.isEmpty else {
+                toast.show(message: "No speech detected.", isError: false)
+                return
+            }
+            if Self.isEnglish(text) {
+                Clipboard.copy(text)
                 toast.show(message: "Copied to clipboard", isError: false)
-            } catch {
-                guard !Task.isCancelled else { return }
-                toast.show(message: error.localizedDescription, isError: true)
+                return
             }
+            toast.show(message: "Making magic…", isError: false, autoDismiss: false)
+            let translated = try await openAI.translateToEnglish(
+                text: text,
+                apiKey: apiKey,
+                model: ModelSettings.chat
+            )
+            guard !Task.isCancelled else { return }
+            Clipboard.copy(translated)
+            toast.show(message: "Copied to clipboard", isError: false)
+        } catch {
+            guard !Task.isCancelled else { return }
+            toast.show(message: error.localizedDescription, isError: true)
         }
     }
 

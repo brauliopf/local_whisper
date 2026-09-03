@@ -76,6 +76,10 @@ final class Hotkeys {
 
         guard installed == noErr else { return Registration() }
 
+        return registerHotkeys()
+    }
+
+    private func registerHotkeys() -> Registration {
         var result = Registration()
         result.encouragement = RegisterEventHotKey(
             UInt32(kVK_ANSI_E),

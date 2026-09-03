@@ -62,13 +62,15 @@ final class ToastPresenter {
 
     private func screenForCursor() -> NSScreen {
         let location = NSEvent.mouseLocation
-        return NSScreen.screens.first { NSMouseInRect(location, $0.frame, false) } ?? NSScreen.main ?? NSScreen.screens[0]
+        return NSScreen.screens.first { NSMouseInRect(location, $0.frame, false) }
+            ?? NSScreen.main
+            ?? NSScreen.screens[0]
     }
 
     private func origin(for size: NSSize, on screen: NSScreen) -> NSPoint {
         let frame = screen.visibleFrame
-        let x = frame.midX - size.width / 2
-        let y = frame.minY + 80
-        return NSPoint(x: x, y: y)
+        let horizontalOrigin = frame.midX - size.width / 2
+        let verticalOrigin = frame.minY + 80
+        return NSPoint(x: horizontalOrigin, y: verticalOrigin)
     }
 }
