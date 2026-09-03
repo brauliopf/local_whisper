@@ -39,7 +39,9 @@ final class VoiceTranscription {
             finishAndTranscribe()
             return
         }
-        if isTranscribing || isStartingRecording { return }
+        if isTranscribing || isStartingRecording {
+            return
+        }
         startRecording()
     }
 

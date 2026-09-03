@@ -10,7 +10,9 @@ nonisolated enum OpenAIModels: Sendable {
     }
 
     static func merged(saved: String, into ids: [String]) -> [String] {
-        if ids.contains(saved) { return ids }
+        if ids.contains(saved) {
+            return ids
+        }
         return [saved] + ids
     }
 
@@ -22,7 +24,9 @@ nonisolated enum OpenAIModels: Sendable {
     static func isChat(_ id: String) -> Bool {
         let lower = id.lowercased()
         let excluded = ["audio", "realtime", "tts", "embedding", "dalle", "dall-e", "moderation", "transcribe", "whisper"]
-        if excluded.contains(where: { lower.contains($0) }) { return false }
+        if excluded.contains(where: { lower.contains($0) }) {
+            return false
+        }
         return ["gpt-", "o1", "o3", "o4", "chatgpt-"].contains { lower.hasPrefix($0) }
     }
 }

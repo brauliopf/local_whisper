@@ -16,7 +16,7 @@ final class Hotkeys {
     private var escapeHotKeyRef: EventHotKeyRef?
     private var eventHandler: EventHandlerRef?
 
-    private static let signature: OSType = 0x4C574850 // 'LWHP'
+    private static let signature: OSType = 0x4C57_4850 // 'LWHP'
     private static let encouragementID = EventHotKeyID(signature: signature, id: 1)
     private static let transcribeID = EventHotKeyID(signature: signature, id: 2)
     private static let screenshotID = EventHotKeyID(signature: signature, id: 4)

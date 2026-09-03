@@ -34,9 +34,9 @@ nonisolated enum OpenAIAPI: Sendable {
             var container = encoder.container(keyedBy: CodingKeys.self)
             try container.encode(role, forKey: .role)
             switch content {
-            case .text(let text):
+            case let .text(text):
                 try container.encode(text, forKey: .content)
-            case .parts(let parts):
+            case let .parts(parts):
                 try container.encode(parts, forKey: .content)
             }
         }

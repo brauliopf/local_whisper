@@ -27,10 +27,10 @@ final class AppCoordinator {
         openAI: any OpenAIClienting,
         keychain: any Keychaining
     ) {
-        self.encouragement = Encouragement(openAI: openAI, keychain: keychain, toast: toast)
-        self.voice = VoiceTranscription(openAI: openAI, keychain: keychain, toast: toast)
-        self.screenshot = ScreenshotOCR(openAI: openAI, keychain: keychain, toast: toast)
-        self.countdown = Countdown(toast: toast)
+        encouragement = Encouragement(openAI: openAI, keychain: keychain, toast: toast)
+        voice = VoiceTranscription(openAI: openAI, keychain: keychain, toast: toast)
+        screenshot = ScreenshotOCR(openAI: openAI, keychain: keychain, toast: toast)
+        countdown = Countdown(toast: toast)
 
         voice.setEscapeEnabled = { [weak self] enabled in
             self?.hotkeys.setEscapeEnabled(enabled)

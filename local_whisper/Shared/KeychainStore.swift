@@ -5,7 +5,9 @@ struct KeychainStore: Keychaining, Sendable {
     private let service = "brauliopf.local-whisper"
     private let account = "openai-api-key"
 
-    var hasAPIKey: Bool { loadAPIKey() != nil }
+    var hasAPIKey: Bool {
+        loadAPIKey() != nil
+    }
 
     func loadAPIKey() -> String? {
         let query: [String: Any] = [

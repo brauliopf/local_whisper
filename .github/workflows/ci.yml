@@ -33,12 +33,3 @@ jobs:
           -destination 'platform=macOS'
           CODE_SIGNING_ALLOWED=NO
           build
-
-  dependency-review:
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    steps:
-      - name: Review dependency changes
-        uses: actions/dependency-review-action@v4

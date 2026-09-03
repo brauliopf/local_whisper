@@ -36,7 +36,7 @@ final class AudioRecorder {
 
         let settings: [String: Any] = [
             AVFormatIDKey: Int(kAudioFormatMPEG4AAC),
-            AVSampleRateKey: 24_000,
+            AVSampleRateKey: 24000,
             AVNumberOfChannelsKey: 1,
             AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue,
         ]
@@ -46,8 +46,8 @@ final class AudioRecorder {
         guard recorder.record() else { throw AudioRecorderError.failedToStart }
 
         self.recorder = recorder
-        self.fileURL = url
-        self.duration = 0
+        fileURL = url
+        duration = 0
     }
 
     func stop() -> URL? {

@@ -12,9 +12,9 @@ nonisolated enum OpenAIError: LocalizedError, Sendable {
             return "Add your OpenAI API key in Settings."
         case .invalidResponse:
             return "Couldn't fetch a message — try again."
-        case .apiError(let message):
+        case let .apiError(message):
             return message
-        case .network(let message):
+        case let .network(message):
             return message
         }
     }

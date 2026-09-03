@@ -9,7 +9,7 @@ final class StatusItem: NSObject {
 
     init(coordinator: AppCoordinator) {
         self.coordinator = coordinator
-        self.statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         super.init()
 
         coordinator.openSettings = { [weak self] in
