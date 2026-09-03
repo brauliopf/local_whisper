@@ -6,6 +6,7 @@ enum ModelSettings {
 
     private static let chatKey = "openai.chatModel"
     private static let transcribeKey = "openai.transcribeModel"
+    private static let rawTelemetryKey = "telemetry.rawPayloads"
 
     static var chat: String {
         get { UserDefaults.standard.string(forKey: chatKey) ?? chatDefault }
@@ -15,5 +16,10 @@ enum ModelSettings {
     static var transcribe: String {
         get { UserDefaults.standard.string(forKey: transcribeKey) ?? transcribeDefault }
         set { UserDefaults.standard.set(newValue, forKey: transcribeKey) }
+    }
+
+    static var rawTelemetryEnabled: Bool {
+        get { UserDefaults.standard.bool(forKey: rawTelemetryKey) }
+        set { UserDefaults.standard.set(newValue, forKey: rawTelemetryKey) }
     }
 }

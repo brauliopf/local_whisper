@@ -53,7 +53,13 @@ actor OpenAIClient: OpenAIClienting {
             temperature: 0.9,
             maxTokens: 60
         )
-        let text = try await chat(apiKey: apiKey, body: requestBody, timeout: 20)
+        let text = try await withLLMSpan(
+            name: "openai.chat_completion",
+            model: model,
+            request: ["prompt": "Give me a word of encouragement."]
+        ) {
+            try await chat(apiKey: apiKey, body: requestBody, timeout: 20)
+        } response: { ["text": $0 ?? ""] }
         guard let text, !text.isEmpty else { throw OpenAIError.invalidResponse }
         return text
     }
@@ -77,9 +83,15 @@ actor OpenAIClient: OpenAIClienting {
         body.append(Data("\r\n--\(boundary)--\r\n".utf8))
         request.httpBody = body
 
-        let data = try await send(request)
-        let decoded = try decoder.decode(OpenAIAPI.TranscriptionResponse.self, from: data)
-        return decoded.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return try await withLLMSpan(
+            name: "openai.transcription",
+            model: model,
+            request: ["audio_bytes": String(fileData.count)]
+        ) {
+            let data = try await send(request)
+            let decoded = try decoder.decode(OpenAIAPI.TranscriptionResponse.self, from: data)
+            return decoded.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        } response: { ["text": $0] }
     }
 
     func translateToEnglish(text: String, apiKey: String, model: String) async throws -> String {
@@ -92,7 +104,15 @@ actor OpenAIClient: OpenAIClienting {
             temperature: 0,
             maxTokens: 4096
         )
-        let translated = try await chat(apiKey: apiKey, body: requestBody, timeout: 60)
+        let translated = try await withLLMSpan(
+            name: "openai.chat_completion",
+            model: model,
+            request: ["prompt": text],
+            operation: {
+                try await chat(apiKey: apiKey, body: requestBody, timeout: 60)
+            },
+            response: { ["text": $0 ?? ""] }
+        )
         guard let translated, !translated.isEmpty else {
             throw OpenAIError.invalidResponse
         }
@@ -115,7 +135,18 @@ actor OpenAIClient: OpenAIClienting {
             temperature: 0,
             maxTokens: 4096
         )
-        let text = try await chat(apiKey: apiKey, body: requestBody, timeout: 60)
+        let text = try await withLLMSpan(
+            name: "openai.chat_completion",
+            model: model,
+            request: [
+                "prompt": Self.screenshotPrompt,
+                "image_bytes": String(jpegData.count)
+            ],
+            operation: {
+                try await chat(apiKey: apiKey, body: requestBody, timeout: 60)
+            },
+            response: { ["text": $0 ?? ""] }
+        )
         guard let text, !text.isEmpty else { return nil }
         if text.uppercased() == "NO_TEXT" { return nil }
         return text
@@ -154,6 +185,36 @@ actor OpenAIClient: OpenAIClienting {
             throw OpenAIError.apiError("\(failurePrefix) — check your API key.")
         }
         return data
+    }
+
+    private func withLLMSpan<T>(
+        name: String,
+        model: String,
+        request: [String: String],
+        operation: () async throws -> T,
+        response: (T) -> [String: String]
+    ) async throws -> T {
+        let context = TelemetryScope.context
+        let span = await LocalTelemetry.shared.start(
+            name: name,
+            operation: context?.operation ?? "openai_request",
+            trigger: context?.trigger ?? "unknown",
+            kind: "client",
+            model: model,
+            request: request,
+            context: context
+        )
+        do {
+            let result = try await operation()
+            await LocalTelemetry.shared.finish(span, response: response(result))
+            return result
+        } catch is CancellationError {
+            await LocalTelemetry.shared.finish(span, status: "cancelled")
+            throw CancellationError()
+        } catch {
+            await LocalTelemetry.shared.finish(span, status: "error", error: error.localizedDescription)
+            throw error
+        }
     }
 
     private static func appendFormField(_ name: String, value: String, boundary: String, to body: inout Data) {

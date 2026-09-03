@@ -78,6 +78,15 @@ struct SettingsView: View {
             }
 
             Section {
+                Toggle("Store raw LLM text in telemetry", isOn: Binding(
+                    get: { ModelSettings.rawTelemetryEnabled },
+                    set: { ModelSettings.rawTelemetryEnabled = $0 }
+                ))
+            } header: {
+                Text("Observability")
+            }
+
+            Section {
                 Picker("Chat", selection: $chatModel) {
                     ForEach(chatIDs, id: \.self) { id in
                         Text(id).tag(id)
