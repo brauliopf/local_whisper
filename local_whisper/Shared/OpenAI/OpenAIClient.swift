@@ -34,7 +34,8 @@ actor OpenAIClient: OpenAIClienting {
     }
 
     func listModels(apiKey: String) async throws -> [String] {
-        var request = URLRequest(url: OpenAIAPI.models)
+        guard let endpoint = OpenAIAPI.models else { throw OpenAIError.invalidResponse }
+        var request = URLRequest(url: endpoint)
         request.httpMethod = "GET"
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         request.timeoutInterval = 20
@@ -66,7 +67,8 @@ actor OpenAIClient: OpenAIClienting {
 
     func transcribeAudio(at fileURL: URL, apiKey: String, model: String) async throws -> String {
         let boundary = UUID().uuidString
-        var request = URLRequest(url: OpenAIAPI.transcriptions)
+        guard let endpoint = OpenAIAPI.transcriptions else { throw OpenAIError.invalidResponse }
+        var request = URLRequest(url: endpoint)
         request.httpMethod = "POST"
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
@@ -153,7 +155,8 @@ actor OpenAIClient: OpenAIClienting {
     }
 
     private func chat(apiKey: String, body: OpenAIAPI.ChatCompletionRequest, timeout: TimeInterval) async throws -> String? {
-        var request = URLRequest(url: OpenAIAPI.chatCompletions)
+        guard let endpoint = OpenAIAPI.chatCompletions else { throw OpenAIError.invalidResponse }
+        var request = URLRequest(url: endpoint)
         request.httpMethod = "POST"
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")

@@ -1,9 +1,9 @@
 import Foundation
 
 nonisolated enum OpenAIAPI: Sendable {
-    static let chatCompletions = URL(string: "https://api.openai.com/v1/chat/completions")!
-    static let transcriptions = URL(string: "https://api.openai.com/v1/audio/transcriptions")!
-    static let models = URL(string: "https://api.openai.com/v1/models")!
+    static let chatCompletions = URL(string: "https://api.openai.com/v1/chat/completions")
+    static let transcriptions = URL(string: "https://api.openai.com/v1/audio/transcriptions")
+    static let models = URL(string: "https://api.openai.com/v1/models")
 
     struct ChatCompletionRequest: Encodable, Sendable {
         var model: String

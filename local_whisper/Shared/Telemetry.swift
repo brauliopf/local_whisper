@@ -233,9 +233,9 @@ actor LocalTelemetry {
                 try data.write(to: fileURL, options: [.atomic])
             } else {
                 let handle = try FileHandle(forWritingTo: fileURL)
+                defer { try? handle.close() }
                 try handle.seekToEnd()
                 try handle.write(contentsOf: data)
-                try handle.close()
             }
         } catch {
             logger.error("Unable to write telemetry: \(error.localizedDescription, privacy: .public)")
