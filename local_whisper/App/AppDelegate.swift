@@ -8,5 +8,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusItem = StatusItem(coordinator: coordinator)
         coordinator.finishLaunching()
+        Task {
+            await Telemetry.prepare()
+        }
     }
 }

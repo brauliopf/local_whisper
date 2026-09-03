@@ -35,13 +35,16 @@ final class Encouragement {
         toast.show(message: "Thinking…", isError: false)
 
         task = Task {
-            do {
-                let message = try await openAI.fetchEncouragement(apiKey: apiKey, model: ModelSettings.chat)
-                guard !Task.isCancelled else { return }
-                toast.show(message: message, isError: false)
-            } catch {
-                guard !Task.isCancelled else { return }
-                toast.show(message: error.localizedDescription, isError: true)
+            await Telemetry.instrument(operation: "encouragement", trigger: "hotkey") {
+                do {
+                    let message = try await openAI.fetchEncouragement(apiKey: apiKey, model: ModelSettings.chat)
+                    guard !Task.isCancelled else { return }
+                    toast.show(message: message, isError: false)
+                } catch {
+                    guard !Task.isCancelled else { return }
+                    toast.show(message: error.localizedDescription, isError: true)
+                    throw error
+                }
             }
         }
     }

@@ -36,35 +36,36 @@ final class ScreenshotOCR {
         }
 
         task = Task {
-            if !ScreenshotCapture.hasScreenRecordingAccess {
-                let granted = ScreenshotCapture.requestScreenRecordingAccess()
-                guard granted else {
-                    toast.show(message: "Screen Recording access is required.", isError: true)
-                    return
+            await Telemetry.instrument(operation: "screenshot_ocr", trigger: "hotkey") {
+                if !ScreenshotCapture.hasScreenRecordingAccess {
+                    let granted = ScreenshotCapture.requestScreenRecordingAccess()
+                    guard granted else {
+                        toast.show(message: "Screen Recording access is required.", isError: true)
+                        return
+                    }
                 }
-            }
 
-            let url = await ScreenshotCapture.captureInteractive()
-            guard !Task.isCancelled else { return }
-            guard let url else { return }
+                let url = await ScreenshotCapture.captureInteractive()
+                guard !Task.isCancelled, let url else { return }
 
-            defer { try? FileManager.default.removeItem(at: url) }
+                defer { try? FileManager.default.removeItem(at: url) }
+                toast.show(message: "Reading image…", isError: false, autoDismiss: false)
 
-            toast.show(message: "Reading image…", isError: false, autoDismiss: false)
-
-            do {
-                let jpeg = try Self.jpegData(from: url)
-                let text = try await openAI.extractText(fromJPEG: jpeg, apiKey: apiKey, model: ModelSettings.chat)
-                guard !Task.isCancelled else { return }
-                guard let text else {
-                    toast.show(message: "No text found", isError: false)
-                    return
+                do {
+                    let jpeg = try Self.jpegData(from: url)
+                    let text = try await openAI.extractText(fromJPEG: jpeg, apiKey: apiKey, model: ModelSettings.chat)
+                    guard !Task.isCancelled else { return }
+                    guard let text else {
+                        toast.show(message: "No text found", isError: false)
+                        return
+                    }
+                    Clipboard.copy(text)
+                    toast.show(message: "Copied to clipboard", isError: false)
+                } catch {
+                    guard !Task.isCancelled else { return }
+                    toast.show(message: error.localizedDescription, isError: true)
+                    throw error
                 }
-                Clipboard.copy(text)
-                toast.show(message: "Copied to clipboard", isError: false)
-            } catch {
-                guard !Task.isCancelled else { return }
-                toast.show(message: error.localizedDescription, isError: true)
             }
         }
     }
