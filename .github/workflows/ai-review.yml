@@ -1,0 +1,51 @@
+name: AI PR Review
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+concurrency:
+  group: ai-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  review:
+    if: github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    env:
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      OPENAI_REVIEW_MODEL: ${{ vars.OPENAI_REVIEW_MODEL || 'gpt-4o-mini' }}
+      PR_URL: ${{ github.event.pull_request.html_url }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Check required secret
+        id: secret
+        run: |
+          if [ -z "$OPENAI_API_KEY" ]; then
+            echo "OPENAI_API_KEY is not configured. Skipping AI review."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Download pull request diff
+        if: steps.secret.outputs.skip == 'false'
+        run: gh pr diff "$PR_URL" > "$RUNNER_TEMP/pr.diff"
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Generate review
+        if: steps.secret.outputs.skip == 'false'
+        run: python3 scripts/ai_review.py "$RUNNER_TEMP/pr.diff" "$RUNNER_TEMP/review.md"
+
+      - name: Post review comment
+        if: steps.secret.outputs.skip == 'false'
+        run: gh pr comment "$PR_URL" --body-file "$RUNNER_TEMP/review.md"
+        env:
+          GH_TOKEN: ${{ github.token }}
