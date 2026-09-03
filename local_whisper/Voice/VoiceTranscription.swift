@@ -1,4 +1,5 @@
 import Foundation
+import NaturalLanguage
 
 @MainActor
 @Observable
@@ -134,6 +135,11 @@ final class VoiceTranscription {
                     toast.show(message: "No speech detected.", isError: false)
                     return
                 }
+                if Self.isEnglish(text) {
+                    Clipboard.copy(text)
+                    toast.show(message: "Copied to clipboard", isError: false)
+                    return
+                }
                 toast.show(message: "Making magic…", isError: false, autoDismiss: false)
                 let translated = try await openAI.translateToEnglish(
                     text: text,
@@ -148,5 +154,11 @@ final class VoiceTranscription {
                 toast.show(message: error.localizedDescription, isError: true)
             }
         }
+    }
+
+    private static func isEnglish(_ text: String) -> Bool {
+        let recognizer = NLLanguageRecognizer()
+        recognizer.processString(text)
+        return recognizer.dominantLanguage == .english
     }
 }
