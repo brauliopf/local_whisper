@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import NaturalLanguage
 
 @MainActor
 @Observable
@@ -59,7 +60,21 @@ final class ScreenshotOCR {
                         toast.show(message: "No text found", isError: false)
                         return
                     }
-                    Clipboard.copy(text)
+
+                    let output: String
+                    if Self.needsTranslation(text) {
+                        toast.show(message: "Translating…", isError: false, autoDismiss: false)
+                        output = try await openAI.translateToEnglish(
+                            text: text,
+                            apiKey: apiKey,
+                            model: ModelSettings.chat
+                        )
+                        guard !Task.isCancelled else { return }
+                    } else {
+                        output = text
+                    }
+
+                    Clipboard.copy(output)
                     toast.show(message: "Copied to clipboard", isError: false)
                 } catch {
                     guard !Task.isCancelled else { return }
@@ -68,6 +83,12 @@ final class ScreenshotOCR {
                 }
             }
         }
+    }
+
+    private static func needsTranslation(_ text: String) -> Bool {
+        let recognizer = NLLanguageRecognizer()
+        recognizer.processString(text)
+        return recognizer.dominantLanguage != .english
     }
 
     private static func jpegData(from fileURL: URL) throws -> Data {
