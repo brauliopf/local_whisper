@@ -54,4 +54,47 @@ final class CountdownTests: XCTestCase {
 
         XCTAssertEqual(soundPlayCount, 0)
     }
+
+    func testStartOrExtendStartsWhenStopped() {
+        let countdown = Countdown(toast: ToastPresenter())
+
+        countdown.startOrExtend()
+
+        XCTAssertTrue(countdown.isRunning)
+        countdown.cancel()
+    }
+
+    func testStartOrExtendAddsFiveMinutesWhenRunning() {
+        let countdown = Countdown(toast: ToastPresenter())
+        countdown.start()
+        let initial = seconds(from: countdown.remainingLabel)
+
+        countdown.startOrExtend()
+
+        let extended = seconds(from: countdown.remainingLabel)
+        XCTAssertGreaterThanOrEqual(extended - initial, 299)
+        countdown.cancel()
+    }
+
+    func testRepeatedExtensionsAccumulateWithoutCompletionSound() {
+        var soundPlayCount = 0
+        let countdown = Countdown(toast: ToastPresenter()) {
+            soundPlayCount += 1
+        }
+        countdown.start()
+        let initial = seconds(from: countdown.remainingLabel)
+
+        countdown.startOrExtend()
+        countdown.startOrExtend()
+
+        let extended = seconds(from: countdown.remainingLabel)
+        XCTAssertGreaterThanOrEqual(extended - initial, 598)
+        XCTAssertEqual(soundPlayCount, 0)
+        countdown.cancel()
+    }
+
+    private func seconds(from label: String?) -> Int {
+        let parts = label!.split(separator: ":").map { Int($0)! }
+        return parts[0] * 60 + parts[1]
+    }
 }

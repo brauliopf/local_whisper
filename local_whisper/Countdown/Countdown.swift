@@ -7,6 +7,8 @@ final class Countdown {
     private(set) var remainingLabel: String?
     private(set) var isRunning = false
 
+    private static let extensionDuration: TimeInterval = 5 * 60
+
     private let toast: ToastPresenter
     private let playCompletionSound: () -> Void
     private var deadline: Date?
@@ -36,6 +38,20 @@ final class Countdown {
                 self?.syncFromDeadline()
             }
         }
+    }
+
+    func startOrExtend() {
+        if isRunning {
+            addTime(Self.extensionDuration)
+        } else {
+            start()
+        }
+    }
+
+    func addTime(_ duration: TimeInterval) {
+        guard isRunning, let deadline else { return }
+        self.deadline = deadline.addingTimeInterval(duration)
+        syncFromDeadline()
     }
 
     func cancel() {
