@@ -62,6 +62,13 @@ struct SettingsView: View {
                         .multilineTextAlignment(.trailing)
                         .focused($countdownMinutesFocused)
                         .onSubmit(commitCountdownMinutes)
+                        .onChange(of: countdownMinutesText) { _, newValue in
+                            let trimmed = newValue.trimmingCharacters(in: .whitespaces)
+                            guard let minutes = Int(trimmed),
+                                  (TimerSettings.minMinutes...TimerSettings.maxMinutes).contains(minutes)
+                            else { return }
+                            TimerSettings.minutes = minutes
+                        }
                     Stepper("", onIncrement: {
                         nudgeCountdownMinutes(by: 1)
                     }, onDecrement: {
@@ -71,6 +78,11 @@ struct SettingsView: View {
                     Text("min")
                         .foregroundStyle(.secondary)
                 }
+
+                Toggle("Play sound when timer completes", isOn: Binding(
+                    get: { TimerSettings.completionSoundEnabled },
+                    set: { TimerSettings.completionSoundEnabled = $0 }
+                ))
             } header: {
                 Text("Configurations")
             } footer: {

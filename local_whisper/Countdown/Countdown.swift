@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 
 @MainActor
@@ -7,11 +8,18 @@ final class Countdown {
     private(set) var isRunning = false
 
     private let toast: ToastPresenter
+    private let playCompletionSound: () -> Void
     private var deadline: Date?
     private var tickTask: Task<Void, Never>?
 
-    init(toast: ToastPresenter) {
+    init(
+        toast: ToastPresenter,
+        playCompletionSound: @escaping () -> Void = {
+            NSSound(named: NSSound.Name("Glass"))?.play()
+        }
+    ) {
         self.toast = toast
+        self.playCompletionSound = playCompletionSound
     }
 
     func start() {
@@ -54,13 +62,16 @@ final class Countdown {
         setRemaining(Self.format(remaining))
     }
 
-    private func complete() {
+    func complete() {
         guard isRunning else { return }
         tickTask?.cancel()
         tickTask = nil
         deadline = nil
         setRemaining(nil)
         isRunning = false
+        if TimerSettings.completionSoundEnabled {
+            playCompletionSound()
+        }
         toast.show(message: "Timer complete", isError: false, systemImage: "checkmark")
     }
 
