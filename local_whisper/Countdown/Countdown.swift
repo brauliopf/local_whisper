@@ -14,7 +14,9 @@ final class Countdown {
 
     init(
         toast: ToastPresenter,
-        playCompletionSound: @escaping () -> Void = { NSSound.beep() }
+        playCompletionSound: @escaping () -> Void = {
+            NSSound(named: NSSound.Name("Glass"))?.play()
+        }
     ) {
         self.toast = toast
         self.playCompletionSound = playCompletionSound
