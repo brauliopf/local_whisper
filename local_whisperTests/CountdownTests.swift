@@ -94,7 +94,12 @@ final class CountdownTests: XCTestCase {
     }
 
     private func seconds(from label: String?) -> Int {
-        let parts = label!.split(separator: ":").map { Int($0)! }
-        return parts[0] * 60 + parts[1]
+        guard let label else { return 0 }
+        let parts = label.split(separator: ":")
+        guard parts.count == 2,
+              let minutes = Int(parts[0]),
+              let seconds = Int(parts[1])
+        else { return 0 }
+        return minutes * 60 + seconds
     }
 }
