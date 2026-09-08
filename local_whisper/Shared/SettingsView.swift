@@ -71,6 +71,11 @@ struct SettingsView: View {
                     Text("min")
                         .foregroundStyle(.secondary)
                 }
+
+                Toggle("Play sound when timer completes", isOn: Binding(
+                    get: { TimerSettings.completionSoundEnabled },
+                    set: { TimerSettings.completionSoundEnabled = $0 }
+                ))
             } header: {
                 Text("Configurations")
             } footer: {
