@@ -62,6 +62,13 @@ struct SettingsView: View {
                         .multilineTextAlignment(.trailing)
                         .focused($countdownMinutesFocused)
                         .onSubmit(commitCountdownMinutes)
+                        .onChange(of: countdownMinutesText) { _, newValue in
+                            let trimmed = newValue.trimmingCharacters(in: .whitespaces)
+                            guard let minutes = Int(trimmed),
+                                  (TimerSettings.minMinutes...TimerSettings.maxMinutes).contains(minutes)
+                            else { return }
+                            TimerSettings.minutes = minutes
+                        }
                     Stepper("", onIncrement: {
                         nudgeCountdownMinutes(by: 1)
                     }, onDecrement: {
