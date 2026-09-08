@@ -65,7 +65,7 @@ final class StatusItem: NSObject {
             menu.addItem(menuItem("Start Timer", key: "t", action: #selector(startTimer)))
         }
         menu.addItem(.separator())
-        menu.addItem(menuItem("Settings…", key: nil, action: #selector(openSettings)))
+        menu.addItem(menuItem("Settings…", key: "s", action: #selector(openSettings)))
         menu.addItem(.separator())
         menu.addItem(menuItem("Quit", key: "q", modifiers: .command, action: #selector(quit)))
         statusItem.menu = menu
