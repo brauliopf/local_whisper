@@ -45,7 +45,7 @@ final class AppCoordinator {
             self?.readScreenshot()
         }
         hotkeys.onCountdown = { [weak self] in
-            self?.countdown.start()
+            self?.countdown.startOrExtend()
         }
         hotkeys.onSettings = { [weak self] in
             self?.openSettings?()
