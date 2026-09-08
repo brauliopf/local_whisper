@@ -47,6 +47,9 @@ final class AppCoordinator {
         hotkeys.onCountdown = { [weak self] in
             self?.countdown.start()
         }
+        hotkeys.onSettings = { [weak self] in
+            self?.openSettings?()
+        }
         hotkeys.onEscape = { [weak self] in
             self?.voice.cancelRecording()
         }
@@ -78,6 +81,12 @@ final class AppCoordinator {
         if !registration.countdown {
             toast.show(
                 message: "Couldn't register ⌃⌥T — another app may already use that shortcut.",
+                isError: true
+            )
+        }
+        if !registration.settings {
+            toast.show(
+                message: "Couldn't register ⌃⌥S — another app may already use that shortcut.",
                 isError: true
             )
         }
