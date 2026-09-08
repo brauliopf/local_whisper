@@ -1,15 +1,18 @@
 import AppKit
 import Observation
+import SwiftUI
 
 @MainActor
 final class StatusItem: NSObject {
     private let coordinator: AppCoordinator
     private let statusItem: NSStatusItem
     private var menuShowsRunning: Bool?
+    private var settingsWindow: NSWindow?
 
     init(coordinator: AppCoordinator) {
         self.coordinator = coordinator
         self.statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+        self.settingsWindow = nil
         super.init()
 
         coordinator.openSettings = { [weak self] in
@@ -103,8 +106,27 @@ final class StatusItem: NSObject {
     }
 
     @objc private func openSettings() {
+        if settingsWindow == nil {
+            let window = NSWindow(
+                contentRect: NSRect(x: 0, y: 0, width: 440, height: 500),
+                styleMask: [.titled, .closable, .miniaturizable, .resizable],
+                backing: .buffered,
+                defer: false
+            )
+            window.title = "Settings"
+            let hostingView = NSHostingView(rootView: SettingsView())
+            hostingView.frame = window.contentView?.bounds ?? .zero
+            hostingView.autoresizingMask = [.width, .height]
+            window.contentView = hostingView
+            window.isReleasedWhenClosed = false
+            window.center()
+            settingsWindow = window
+        }
+
+        guard let settingsWindow else { return }
         NSApp.activate(ignoringOtherApps: true)
-        NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+        settingsWindow.collectionBehavior.insert(.moveToActiveSpace)
+        settingsWindow.makeKeyAndOrderFront(nil)
     }
 
     @objc private func quit() {
