@@ -1,7 +1,7 @@
 import Foundation
 
 actor OpenAIClient: OpenAIClienting {
-    private let session: URLSession
+    private let transport: OpenAITransport
     private let encoder: JSONEncoder
     private let decoder: JSONDecoder
 
@@ -27,7 +27,7 @@ actor OpenAIClient: OpenAIClienting {
         """
 
     init(session: URLSession = .shared) {
-        self.session = session
+        self.transport = OpenAITransport(session: session)
         let encoder = JSONEncoder()
         self.encoder = encoder
         self.decoder = JSONDecoder()
@@ -169,25 +169,7 @@ actor OpenAIClient: OpenAIClienting {
     }
 
     private func send(_ request: URLRequest, failurePrefix: String = "Couldn't fetch a message") async throws -> Data {
-        let data: Data
-        let response: URLResponse
-        do {
-            (data, response) = try await session.data(for: request)
-        } catch {
-            throw OpenAIError.network(Self.networkMessage(for: error))
-        }
-
-        guard let http = response as? HTTPURLResponse else {
-            throw OpenAIError.invalidResponse
-        }
-
-        if http.statusCode != 200 {
-            if let apiError = try? decoder.decode(OpenAIAPI.ErrorResponse.self, from: data) {
-                throw OpenAIError.apiError("\(failurePrefix) — \(apiError.error.message)")
-            }
-            throw OpenAIError.apiError("\(failurePrefix) — check your API key.")
-        }
-        return data
+        try await transport.send(request, failurePrefix: failurePrefix)
     }
 
     private func withLLMSpan<T>(
@@ -226,17 +208,4 @@ actor OpenAIClient: OpenAIClienting {
         body.append(Data("\(value)\r\n".utf8))
     }
 
-    private static func networkMessage(for error: Error) -> String {
-        let code = (error as? URLError)?.code
-        switch code {
-        case .cannotFindHost, .dnsLookupFailed, .cannotConnectToHost:
-            return "Couldn't reach OpenAI. Check your internet connection."
-        case .notConnectedToInternet, .networkConnectionLost:
-            return "No internet connection."
-        case .timedOut:
-            return "OpenAI timed out — try again."
-        default:
-            return "Couldn't fetch a message — \(error.localizedDescription)"
-        }
-    }
 }
