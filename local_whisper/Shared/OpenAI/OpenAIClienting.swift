@@ -28,6 +28,14 @@ nonisolated protocol OpenAIClienting: Sendable {
     func extractText(fromJPEG data: Data, apiKey: String, model: String) async throws -> String?
 }
 
+nonisolated protocol OpenAIResponsesClienting: Sendable {
+    func createResponse(
+        _ request: OpenAIResponsesAPI.Request,
+        apiKey: String,
+        timeout: TimeInterval
+    ) async throws -> OpenAIResponsesAPI.Response
+}
+
 nonisolated protocol Keychaining: Sendable {
     var hasAPIKey: Bool { get }
     func loadAPIKey() -> String?
