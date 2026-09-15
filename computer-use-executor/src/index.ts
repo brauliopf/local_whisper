@@ -4,6 +4,11 @@ import { isRecord, type Request } from "./protocol.js";
 
 const executor = new BrowserExecutor();
 
+/*
+ * Writes a JSON-RPC message to the standard output.
+ * the caller reads stdout
+ * keep diagnostics separate from the executor (stderr)
+ */
 function write(message: Record<string, unknown>) {
   process.stdout.write(`${JSON.stringify(message)}\n`);
 }
