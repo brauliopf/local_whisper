@@ -28,7 +28,6 @@ struct ComputerUseCoordinator: Sendable {
     private let browser: any BrowserExecuting
     private let maxRounds: Int
     private let responseTimeout: TimeInterval
-    private let encoder = JSONEncoder()
 
     init(
         responses: any OpenAIResponsesClienting,
@@ -91,6 +90,7 @@ struct ComputerUseCoordinator: Sendable {
             tools: [tool]
         )
         var browserRounds = 0
+        let encoder = JSONEncoder()
 
         while true {
             let response = try await responses.createResponse(
