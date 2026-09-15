@@ -8,8 +8,16 @@ function write(message: Record<string, unknown>) {
   process.stdout.write(`${JSON.stringify(message)}\n`);
 }
 
-function errorResponse(id: number, message: string) {
-  write({ jsonrpc: "2.0", id, error: { code: -32000, message } });
+function errorResponse(id: number | null, message: string, code = -32000) {
+  write({ jsonrpc: "2.0", id, error: { code, message } });
+}
+
+function parseRequest(value: unknown): Request {
+  if (!isRecord(value) || value.jsonrpc !== "2.0" || typeof value.id !== "number" ||
+    typeof value.method !== "string" || !["session.start", "script.execute", "session.stop"].includes(value.method)) {
+    throw new Error("Invalid JSON-RPC request.");
+  }
+  return value as unknown as Request;
 }
 
 async function handle(request: Request) {
@@ -40,12 +48,16 @@ input.on("line", line => {
   if (!line.trim()) return;
   let request: Request;
   try {
-    request = JSON.parse(line) as Request;
-  } catch {
-    errorResponse(0, "Invalid JSON request.");
+    request = parseRequest(JSON.parse(line));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`[executor] rejected stdin request: ${message}`);
+    errorResponse(null, message, message === "Invalid JSON-RPC request." ? -32600 : -32700);
     return;
   }
-  queue = queue.then(() => handle(request)).catch(() => undefined);
+  queue = queue.then(() => handle(request)).catch(error => {
+    console.error(`[executor] unhandled request error: ${error instanceof Error ? error.message : String(error)}`);
+  });
 });
 
 async function shutdown() {
