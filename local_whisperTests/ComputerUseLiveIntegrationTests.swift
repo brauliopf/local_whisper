@@ -39,7 +39,7 @@ final class ComputerUseLiveIntegrationTests: XCTestCase {
 
         let result = try await coordinator.run(
             task: """
-            Use the execute_playwright tool exactly once. Read the text of the h1 element on the current page and return it as a generic table with one column named Heading. After the tool returns, answer with only the heading text.
+            Use the execute_playwright tool exactly once. The generated module must use this contract: module.exports = async ({ page }) => ({ type: "table", columns: ["Heading"], rows: [[await page.locator("h1").innerText()]], notes: [] }); Use Playwright's page API only; do not use document, window, or browser DOM APIs. Read the text of the h1 element on the current page and return it as a generic table with one column named Heading. After the tool returns, answer with only the heading text.
             """,
             model: model,
             apiKey: apiKey,
