@@ -115,6 +115,18 @@ actor NodeBrowserExecutor: BrowserExecuting {
         let process = Process()
         process.executableURL = nodeURL
         process.arguments = [executorURL.path]
+        var environment = ProcessInfo.processInfo.environment
+        for key in [
+            "DYLD_INSERT_LIBRARIES",
+            "DYLD_LIBRARY_PATH",
+            "DYLD_FRAMEWORK_PATH",
+            "__XPC_DYLD_LIBRARY_PATH",
+            "__XPC_DYLD_FRAMEWORK_PATH",
+            "XCInjectBundleInto",
+        ] {
+            environment.removeValue(forKey: key)
+        }
+        process.environment = environment
         let stdin = Pipe()
         let stdout = Pipe()
         process.standardInput = stdin
