@@ -17,6 +17,7 @@ final class AppCoordinator {
     private let voice: VoiceTranscription
     private let screenshot: ScreenshotOCR
     let countdown: Countdown
+    let flightSearch: FlightSearchWorkflow
     private var didFinishLaunching = false
 
     convenience init() {
@@ -25,12 +26,14 @@ final class AppCoordinator {
 
     init(
         openAI: any OpenAIClienting,
-        keychain: any Keychaining
+        keychain: any Keychaining,
+        flightSearch: FlightSearchWorkflow? = nil
     ) {
         self.encouragement = Encouragement(openAI: openAI, keychain: keychain, toast: toast)
         self.voice = VoiceTranscription(openAI: openAI, keychain: keychain, toast: toast)
         self.screenshot = ScreenshotOCR(openAI: openAI, keychain: keychain, toast: toast)
         self.countdown = Countdown(toast: toast)
+        self.flightSearch = flightSearch ?? .live(keychain: keychain)
 
         voice.setEscapeEnabled = { [weak self] enabled in
             self?.hotkeys.setEscapeEnabled(enabled)

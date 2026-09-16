@@ -8,6 +8,7 @@ final class StatusItem: NSObject {
     private let statusItem: NSStatusItem
     private var menuShowsRunning: Bool?
     private var settingsWindow: NSWindow?
+    private var flightSearchWindow: NSWindow?
 
     init(coordinator: AppCoordinator) {
         self.coordinator = coordinator
@@ -59,6 +60,7 @@ final class StatusItem: NSObject {
         menu.addItem(menuItem("Show Encouragement", key: "e", action: #selector(showEncouragement)))
         menu.addItem(menuItem("Transcribe", key: "w", action: #selector(transcribe)))
         menu.addItem(menuItem("Read screenshot", key: "r", action: #selector(readScreenshot)))
+        menu.addItem(menuItem("Flight research…", key: "f", action: #selector(openFlightSearch)))
         if isRunning {
             menu.addItem(menuItem("Cancel Timer", key: nil, action: #selector(cancelTimer)))
         } else {
@@ -103,6 +105,30 @@ final class StatusItem: NSObject {
 
     @objc private func cancelTimer() {
         coordinator.countdown.cancel()
+    }
+
+    @objc private func openFlightSearch() {
+        if flightSearchWindow == nil {
+            let window = NSWindow(
+                contentRect: NSRect(x: 0, y: 0, width: 500, height: 390),
+                styleMask: [.titled, .closable, .miniaturizable, .resizable],
+                backing: .buffered,
+                defer: false
+            )
+            window.title = "Flight research"
+            let hostingView = NSHostingView(rootView: FlightSearchView(workflow: coordinator.flightSearch))
+            hostingView.frame = window.contentView?.bounds ?? .zero
+            hostingView.autoresizingMask = [.width, .height]
+            window.contentView = hostingView
+            window.isReleasedWhenClosed = false
+            window.center()
+            flightSearchWindow = window
+        }
+
+        guard let flightSearchWindow else { return }
+        NSApp.activate(ignoringOtherApps: true)
+        flightSearchWindow.collectionBehavior.insert(.moveToActiveSpace)
+        flightSearchWindow.makeKeyAndOrderFront(nil)
     }
 
     @objc private func openSettings() {
