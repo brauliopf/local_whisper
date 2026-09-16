@@ -39,10 +39,12 @@ nonisolated enum OpenAIResponsesAPI: Sendable {
         var previousResponseID: String?
         var instructions: String?
         var text: TextConfiguration?
+        var parallelToolCalls: Bool?
 
         enum CodingKeys: String, CodingKey {
             case model, input, tools, instructions, text
             case previousResponseID = "previous_response_id"
+            case parallelToolCalls = "parallel_tool_calls"
         }
     }
 

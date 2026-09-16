@@ -26,13 +26,59 @@ final class ComputerUseCoordinatorTests: XCTestCase {
         let requests = await responses.requests()
         XCTAssertEqual(requests.count, 2)
         XCTAssertEqual(requests[0].tools.first?.name, "execute_playwright")
+        XCTAssertEqual(requests[0].tools.first?.description, "Execute one Playwright JavaScript module against the current browser page. The module may inspect and interact with the page.")
+        XCTAssertTrue(requests[0].instructions?.contains("module.exports") == true)
+        XCTAssertTrue(requests[0].instructions?.contains("{ page, context, screenshot }") == true)
+        XCTAssertTrue(requests[0].instructions?.contains("generic table") == true)
+        XCTAssertEqual(requests[0].parallelToolCalls, false)
         XCTAssertEqual(requests[1].previousResponseID, "resp_1")
+        XCTAssertEqual(requests[1].parallelToolCalls, false)
         XCTAssertEqual(requests[1].input.first?["call_id"], .string("call_1"))
         guard case .string(let output) = requests[1].input.first?["output"] else {
             return XCTFail("Expected browser result output")
         }
         let encodedResult = try JSONDecoder().decode(BrowserExecutorResult.self, from: Data(output.utf8))
         XCTAssertEqual(encodedResult.text, ["one"])
+    }
+
+    func testIncludesRequestedScreenshotArtifactsInNextModelInput() async throws {
+        let screenshotURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("computer-use-test-\(UUID().uuidString).png")
+        try Data([0, 1, 2]).write(to: screenshotURL)
+        defer { try? FileManager.default.removeItem(at: screenshotURL) }
+
+        let responses = FakeResponsesClient(responses: [
+            .success(functionCall(id: "resp_1", callID: "call_1", module: "module-one")),
+            .success(message(id: "resp_2", text: "Finished.")),
+        ])
+        let browser = FakeBrowserExecutor(results: [
+            .init(
+                ok: true,
+                value: nil,
+                text: [],
+                artifacts: [.init(path: screenshotURL.path, mimeType: "image/png", label: "page")],
+                browser: .init(url: "https://example.test", title: "Example"),
+                error: nil
+            ),
+        ])
+        let coordinator = makeCoordinator(responses: responses, browser: browser)
+
+        _ = try await coordinator.run(
+            task: "Inspect the page",
+            model: "gpt-test",
+            apiKey: "test-key",
+            browserConfiguration: configuration
+        )
+
+        let requests = await responses.requests()
+        XCTAssertEqual(requests[1].input.count, 2)
+        guard case .array(let content) = requests[1].input[1]["content"],
+              let image = content.first,
+              case .string(let imageURL) = image["image_url"] else {
+            return XCTFail("Expected a data URL image input")
+        }
+        XCTAssertEqual(requests[1].input[1]["role"], .string("user"))
+        XCTAssertTrue(imageURL.hasPrefix("data:image/png;base64,"))
     }
 
     func testRunsMultipleSequentialBrowserRounds() async throws {

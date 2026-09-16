@@ -23,6 +23,15 @@ nonisolated enum ComputerUseCoordinatorError: LocalizedError, Sendable, Equatabl
 struct ComputerUseCoordinator: Sendable {
     private static let toolName = "execute_playwright"
     private static let defaultResponseTimeout: TimeInterval = 120
+    private static let modelInstructions = """
+        You are controlling a browser through the execute_playwright tool.
+        When acting, provide a JavaScript module whose source assigns an async function to module.exports.
+        The function receives exactly { page, context, screenshot }.
+        Use Playwright APIs through page or context for all browser inspection and interaction; do not use document, window, or other direct DOM APIs.
+        The function must return observations as a generic table object with this shape:
+        { type: \"table\", columns: string[], rows: string[][], notes: string[] }.
+        Return useful observations from the current browser state, not a final answer. After the observations are returned, you may provide the final answer in your assistant message.
+        """
 
     private let responses: any OpenAIResponsesClienting
     private let browser: any BrowserExecuting
@@ -87,7 +96,9 @@ struct ComputerUseCoordinator: Sendable {
                     "content": .string(task),
                 ]),
             ],
-            tools: [tool]
+            tools: [tool],
+            instructions: Self.modelInstructions,
+            parallelToolCalls: false
         )
         var browserRounds = 0
         let encoder = JSONEncoder()
@@ -114,17 +125,20 @@ struct ComputerUseCoordinator: Sendable {
                 }
 
                 browserRounds += 1
+                let observationInput: [OpenAIJSONValue] = [
+                    .object([
+                        "type": .string("function_call_output"),
+                        "call_id": .string(callID),
+                        "output": .string(outputString),
+                    ]),
+                ] + Self.screenshotInputs(from: browserResult)
                 request = OpenAIResponsesAPI.Request(
                     model: model,
-                    input: [
-                        .object([
-                            "type": .string("function_call_output"),
-                            "call_id": .string(callID),
-                            "output": .string(outputString),
-                        ]),
-                    ],
+                    input: observationInput,
                     tools: [tool],
-                    previousResponseID: response.id
+                    previousResponseID: response.id,
+                    instructions: Self.modelInstructions,
+                    parallelToolCalls: false
                 )
                 continue
             }
@@ -165,10 +179,27 @@ struct ComputerUseCoordinator: Sendable {
         return module
     }
 
+    private static func screenshotInputs(from result: BrowserExecutorResult) -> [OpenAIJSONValue] {
+        let images = result.artifacts?.compactMap { artifact -> OpenAIJSONValue? in
+            guard let data = try? Data(contentsOf: URL(fileURLWithPath: artifact.path)) else { return nil }
+            let imageURL = "data:\(artifact.mimeType);base64,\(data.base64EncodedString())"
+            return .object([
+                "type": .string("input_image"),
+                "image_url": .string(imageURL),
+                "detail": .string("auto"),
+            ])
+        } ?? []
+        guard !images.isEmpty else { return [] }
+        return [.object([
+            "role": .string("user"),
+            "content": .array(images),
+        ])]
+    }
+
     private static var playwrightTool: OpenAIResponsesAPI.Tool {
         .init(
             name: toolName,
-            description: "Execute one read-only Playwright JavaScript module in the browser.",
+            description: "Execute one Playwright JavaScript module against the current browser page. The module may inspect and interact with the page.",
             parameters: .object([
                 "type": .string("object"),
                 "properties": .object([
