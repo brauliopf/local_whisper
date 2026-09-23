@@ -1,0 +1,62 @@
+{
+  "info": {
+    "name": "Local Whisper API",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "https://local-whisper-api-24n67dikla-uw.a.run.app"
+    },
+    {
+      "key": "serviceToken",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "Status",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/status",
+          "host": ["{{baseUrl}}"],
+          "path": ["status"]
+        }
+      }
+    },
+    {
+      "name": "Extract image text",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{serviceToken}}",
+              "type": "string"
+            }
+          ]
+        },
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "image",
+              "type": "file",
+              "src": ""
+            }
+          ]
+        },
+        "url": {
+          "raw": "{{baseUrl}}/image-text",
+          "host": ["{{baseUrl}}"],
+          "path": ["image-text"]
+        }
+      }
+    }
+  ]
+}

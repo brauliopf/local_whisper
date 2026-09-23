@@ -1,0 +1,9 @@
+# Source upload exclusions
+.gcloudignore
+.git
+node_modules
+dist
+.env
+.env.*
+!.env.example
+npm-debug.log
