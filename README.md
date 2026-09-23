@@ -5,11 +5,11 @@ A macOS **menu bar** app (no Dock icon) that stays out of the way and does four 
 | Shortcut | Action |
 |---|---|
 | **⌃⌥E** | Fetch a short encouragement from the backend and show it in a toast |
-| **⌃⌥W** | Record English audio (tap again to stop, Escape to cancel), transcribe through the backend, copy text to the clipboard |
+| **⌃⌥W** | Record audio (tap again to stop, Escape to cancel), transcribe and translate through the backend, copy text to the clipboard |
 | **⌃⌥R** | System screenshot picker (drag a region; **Space** for a window; **Escape** to cancel), extract text through the backend, copy to the clipboard |
 | **⌃⌥T** | Start a timer (default 20 minutes; length configurable in Settings). Remaining time shows next to the menu bar icon. Pressing again while running does nothing. |
 
-The backend service token is entered in **Settings** and stored in the **macOS Keychain**. Voice input is English-only; the backend transcribes it without language detection or automatic translation. Provider credentials and model choices are owned by the backend; the Mac no longer needs an OpenAI API key.
+The backend service token is entered in **Settings** and stored in the **macOS Keychain**. Voice input may be multilingual; the backend transcribes the source language, uses TypeSafe Jev to determine whether translation is needed, and returns English when translation is required. Provider credentials and model choices are owned by the backend; the Mac no longer needs an OpenAI API key.
 
 ---
 

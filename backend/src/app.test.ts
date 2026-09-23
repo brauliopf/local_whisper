@@ -3,6 +3,7 @@ import { test } from "node:test";
 import type { AppConfig } from "./config.js";
 import { buildApp } from "./app.js";
 import type { BackendProvider } from "./provider.js";
+import { TranscriptionWorkflow } from "./transcription.js";
 
 const serviceToken = "test-service-token";
 const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0xff, 0xd9]);
@@ -13,16 +14,22 @@ const config: AppConfig = {
   port: 8080,
   openAIAPIKey: "not-used-in-tests",
   serviceToken,
+  typesafeAPIKey: "test-typesafe-key",
   imageTextModel: "gpt-4o-mini",
   encouragementModel: "gpt-4o-mini",
   transcriptionModel: "whisper-1",
+  translationModel: "gpt-4o-mini",
+  typesafeModel: "jev-1.13.0",
   imageMaxBytes: 10 * 1024 * 1024,
   audioMaxBytes: 25 * 1024 * 1024,
   requestBodyMaxBytes: 27 * 1024 * 1024,
   providerTimeoutMs: 100,
   overallTimeoutMs: 150,
-  transcriptionProviderTimeoutMs: 120,
-  transcriptionOverallTimeoutMs: 150,
+  transcriptionProviderTimeoutMs: 70,
+  transcriptionOverallTimeoutMs: 105,
+  typesafeProviderTimeoutMs: 5,
+  translationProviderTimeoutMs: 25,
+  transcriptMaxChars: 20_000,
   rateLimitMax: 10,
   rateLimitWindowMs: 60_000,
 };
@@ -44,6 +51,28 @@ class FakeProvider implements BackendProvider {
   async transcribeAudio(): Promise<string> {
     return this.transcriptionResult;
   }
+
+  async translateToEnglish(text: string): Promise<string> {
+    return text;
+  }
+}
+
+const alwaysEnglishClassifier = {
+  async judgeMajorityEnglish() {
+    return { model: "test-jev", probability: 1 };
+  },
+};
+
+function createTranscriptionWorkflow(provider: BackendProvider) {
+  return new TranscriptionWorkflow({
+    transcriber: provider,
+    translator: provider,
+    classifier: alwaysEnglishClassifier,
+    transcriptionTimeoutMs: config.transcriptionProviderTimeoutMs,
+    typesafeTimeoutMs: config.typesafeProviderTimeoutMs,
+    translationTimeoutMs: config.translationProviderTimeoutMs,
+    maxTranscriptChars: config.transcriptMaxChars,
+  });
 }
 
 function multipartBody(
@@ -64,7 +93,11 @@ function multipartBody(
 }
 
 async function createTestApp(provider: BackendProvider = new FakeProvider()) {
-  return buildApp({ config, provider });
+  return buildApp({
+    config,
+    provider,
+    transcriptionWorkflow: createTranscriptionWorkflow(provider),
+  });
 }
 
 test("status does not require authentication", async () => {
@@ -72,8 +105,32 @@ test("status does not require authentication", async () => {
   try {
     const response = await app.inject({ method: "GET", url: "/status" });
     assert.equal(response.statusCode, 200);
-    assert.deepEqual(response.json(), { status: "ok" });
+    assert.deepEqual(response.json(), {
+      status: "ok",
+      providers: {
+        openai: { configured: true },
+        typesafe: { configured: true },
+      },
+    });
     assert.match(String(response.headers["x-request-id"] ?? ""), /^[0-9a-f-]{36}$/);
+  } finally {
+    await app.close();
+  }
+});
+
+test("status reports an optional TypeSafe key as unconfigured", async () => {
+  const app = await buildApp({
+    config: { ...config, typesafeAPIKey: "" },
+    provider: new FakeProvider(),
+    transcriptionWorkflow: createTranscriptionWorkflow(new FakeProvider()),
+  });
+  try {
+    const response = await app.inject({ method: "GET", url: "/status" });
+    assert.equal(response.statusCode, 200);
+    assert.deepEqual(response.json().providers, {
+      openai: { configured: true },
+      typesafe: { configured: false },
+    });
   } finally {
     await app.close();
   }
@@ -187,7 +244,11 @@ test("transcribes M4A audio", async () => {
       payload: request.body,
     });
     assert.equal(response.statusCode, 200);
-    assert.equal(response.json().text, "This is a test transcript.");
+    assert.deepEqual(response.json(), {
+      text: "This is a test transcript.",
+      is_translated: false,
+      request_id: String(response.headers["x-request-id"]),
+    });
   } finally {
     await app.close();
   }
@@ -207,7 +268,11 @@ test("preserves empty transcription output for silence handling", async () => {
       payload: request.body,
     });
     assert.equal(response.statusCode, 200);
-    assert.equal(response.json().text, "");
+    assert.deepEqual(response.json(), {
+      text: "",
+      is_translated: false,
+      request_id: String(response.headers["x-request-id"]),
+    });
   } finally {
     await app.close();
   }
