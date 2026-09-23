@@ -51,7 +51,7 @@ struct SettingsView: View {
             } header: {
                 Text("Backend")
             } footer: {
-                Text("The token is stored securely in the macOS Keychain.")
+                Text("The token is stored securely in the macOS Keychain. Voice input is English-only and is transcribed without automatic translation.")
             }
 
             Section {

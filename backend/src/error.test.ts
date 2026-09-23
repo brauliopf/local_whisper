@@ -11,10 +11,14 @@ const config: AppConfig = {
   serviceToken: "test-service-token",
   imageTextModel: "gpt-4o-mini",
   encouragementModel: "gpt-4o-mini",
+  transcriptionModel: "whisper-1",
   imageMaxBytes: 10 * 1024 * 1024,
-  requestBodyMaxBytes: 12 * 1024 * 1024,
+  audioMaxBytes: 25 * 1024 * 1024,
+  requestBodyMaxBytes: 27 * 1024 * 1024,
   providerTimeoutMs: 100,
   overallTimeoutMs: 150,
+  transcriptionProviderTimeoutMs: 120,
+  transcriptionOverallTimeoutMs: 150,
   rateLimitMax: 10,
   rateLimitWindowMs: 60_000,
 };
@@ -27,6 +31,10 @@ class FailingProvider implements BackendProvider {
   }
 
   async generateEncouragement(): Promise<string> {
+    throw new ProviderFailureError();
+  }
+
+  async transcribeAudio(): Promise<string> {
     throw new ProviderFailureError();
   }
 }
@@ -59,7 +67,7 @@ test("normalizes provider failures", async () => {
     assert.equal(response.statusCode, 502);
     assert.deepEqual(response.json().error, {
       code: "provider_failure",
-      message: "The image could not be processed. Please try again.",
+      message: "The provider could not process the request. Please try again.",
     });
   } finally {
     await app.close();

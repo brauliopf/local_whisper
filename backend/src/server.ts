@@ -10,6 +10,7 @@ const app = await buildApp({
     config.openAIAPIKey,
     config.imageTextModel,
     config.encouragementModel,
+    config.transcriptionModel,
     config.providerTimeoutMs,
   ),
 });

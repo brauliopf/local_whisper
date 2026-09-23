@@ -4,12 +4,12 @@ A macOS **menu bar** app (no Dock icon) that stays out of the way and does four 
 
 | Shortcut | Action |
 |---|---|
-| **⌃⌥E** | Fetch a short encouragement from OpenAI and show it in a toast |
-| **⌃⌥W** | Record audio (tap again to stop, Escape to cancel), transcribe, copy text to the clipboard |
-| **⌃⌥R** | System screenshot picker (drag a region; **Space** for a window; **Escape** to cancel), extract text, copy to the clipboard |
+| **⌃⌥E** | Fetch a short encouragement from the backend and show it in a toast |
+| **⌃⌥W** | Record English audio (tap again to stop, Escape to cancel), transcribe through the backend, copy text to the clipboard |
+| **⌃⌥R** | System screenshot picker (drag a region; **Space** for a window; **Escape** to cancel), extract text through the backend, copy to the clipboard |
 | **⌃⌥T** | Start a timer (default 20 minutes; length configurable in Settings). Remaining time shows next to the menu bar icon. Pressing again while running does nothing. |
 
-The OpenAI API key is entered in **Settings** and stored in the **macOS Keychain**. Chat and transcription models are chosen there too (defaults `gpt-4o-mini` and `gpt-4o-mini-transcribe`).
+The backend service token is entered in **Settings** and stored in the **macOS Keychain**. Voice input is English-only; the backend transcribes it without language detection or automatic translation. In this phase, the OpenAI API key remains available only for the optional model picker and is not used for feature requests.
 
 ---
 
@@ -26,9 +26,10 @@ local_whisper/
 │   ├── Voice/                   ⌃⌥W record + transcribe
 │   ├── Screenshot/              ⌃⌥R OCR
 │   ├── Countdown/               ⌃⌥T timer
-│   ├── Shared/                  OpenAI client, Keychain, hotkeys, toast, Settings
+│   ├── Shared/                  Backend/OpenAI clients, Keychain, hotkeys, toast, Settings
 │   ├── local_whisper.entitlements  Hardened Runtime audio-input
 │   └── Assets.xcassets
+├── backend/                     Fastify API service and Postman collection
 ├── .github/pull_request_template.md
 └── AGENTS.md                    PR conventions
 ```
@@ -38,7 +39,7 @@ local_whisper/
 - `local_whisperApp` is an `LSUIElement` with a Settings scene only. `AppDelegate` owns the menu bar `NSStatusItem`.
 - `AppDelegate` owns a single `AppCoordinator`. Hotkeys register in `applicationDidFinishLaunching` so launch is not blocked.
 - `AppCoordinator` is last-action-wins between encouragement, voice, and screenshot; the timer runs independently; toasts; clipboard; Settings when the key is missing.
-- Views stay thin. Each feature is an `@Observable` type. Network calls go through one `OpenAIClient` actor with `Codable` request types. Secrets never live in source files.
+- Views stay thin. Each feature is an `@Observable` type. Screenshot extraction, encouragement, and transcription use the authenticated `BackendClient`; the remaining `OpenAIClient` usage is model discovery in Settings. Secrets never live in source files.
 
 ---
 
@@ -47,7 +48,8 @@ local_whisper/
 - A Mac running **macOS 26.5+** (see `MACOSX_DEPLOYMENT_TARGET` in the project)
 - **Xcode** with the matching macOS SDK
 - An **Apple ID** / development team for code signing (Xcode Automatic signing)
-- An **OpenAI API key**
+- A deployed backend URL and service token (see [`backend/README.md`](backend/README.md))
+- An **OpenAI API key** only if you want to use the optional model picker in Settings
 
 ---
 
@@ -74,7 +76,7 @@ The bundle ID is `brauliopf.local-whisper`. If signing fails, change it to somet
 
 **Product → Run** (`⌘R`). Look for the **sparkles** icon in the menu bar.
 
-**Settings…** → paste your OpenAI API key → **Save**. Optionally pick **Chat** and **Transcribe** models (fetched from OpenAI).
+**Settings…** → paste the backend service token → **Save**. The production backend URL is configured by default. The optional OpenAI API key enables the Chat and Transcribe model pickers, but migrated feature requests use the backend.
 
 ### 4. Command-line build
 
