@@ -8,12 +8,20 @@ struct KeychainStore: Keychaining, Sendable {
     var hasServiceToken: Bool { loadServiceToken() != nil }
 
     func loadServiceToken() -> String? {
-        load(account: serviceTokenAccount)
+        guard let token = load(account: serviceTokenAccount)?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+              !token.isEmpty
+        else {
+            return nil
+        }
+        return token
     }
 
     @discardableResult
     func saveServiceToken(_ token: String) -> Bool {
-        save(token, account: serviceTokenAccount)
+        let normalizedToken = token.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedToken.isEmpty else { return false }
+        return save(normalizedToken, account: serviceTokenAccount)
     }
 
     private func load(account: String) -> String? {
