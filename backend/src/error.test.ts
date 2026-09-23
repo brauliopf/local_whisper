@@ -3,13 +3,14 @@ import { test } from "node:test";
 import type { AppConfig } from "./config.js";
 import { buildApp } from "./app.js";
 import { ProviderFailureError } from "./errors.js";
-import type { ImageTextProvider } from "./provider.js";
+import type { BackendProvider } from "./provider.js";
 
 const config: AppConfig = {
   port: 8080,
   openAIAPIKey: "not-used-in-tests",
   serviceToken: "test-service-token",
   imageTextModel: "gpt-4o-mini",
+  encouragementModel: "gpt-4o-mini",
   imageMaxBytes: 10 * 1024 * 1024,
   requestBodyMaxBytes: 12 * 1024 * 1024,
   providerTimeoutMs: 100,
@@ -20,8 +21,12 @@ const config: AppConfig = {
 
 const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0xff, 0xd9]);
 
-class FailingProvider implements ImageTextProvider {
+class FailingProvider implements BackendProvider {
   async extractText(): Promise<string | null> {
+    throw new ProviderFailureError();
+  }
+
+  async generateEncouragement(): Promise<string> {
     throw new ProviderFailureError();
   }
 }

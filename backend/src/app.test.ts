@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { AppConfig } from "./config.js";
 import { buildApp } from "./app.js";
-import type { ImageTextProvider } from "./provider.js";
+import type { BackendProvider } from "./provider.js";
 
 const serviceToken = "test-service-token";
 const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0xff, 0xd9]);
@@ -13,6 +13,7 @@ const config: AppConfig = {
   openAIAPIKey: "not-used-in-tests",
   serviceToken,
   imageTextModel: "gpt-4o-mini",
+  encouragementModel: "gpt-4o-mini",
   imageMaxBytes: 10 * 1024 * 1024,
   requestBodyMaxBytes: 12 * 1024 * 1024,
   providerTimeoutMs: 100,
@@ -21,11 +22,15 @@ const config: AppConfig = {
   rateLimitWindowMs: 60_000,
 };
 
-class FakeProvider implements ImageTextProvider {
+class FakeProvider implements BackendProvider {
   constructor(private readonly result: string | null = "Hello\\nworld") {}
 
   async extractText(): Promise<string | null> {
     return this.result;
+  }
+
+  async generateEncouragement(): Promise<string> {
+    return "Keep going—you are making progress.";
   }
 }
 
@@ -41,7 +46,7 @@ function multipartBody(image: Buffer, contentType = "image/jpeg") {
   };
 }
 
-async function createTestApp(provider: ImageTextProvider = new FakeProvider()) {
+async function createTestApp(provider: BackendProvider = new FakeProvider()) {
   return buildApp({ config, provider });
 }
 
@@ -126,6 +131,45 @@ test("accepts PNG uploads", async () => {
     });
     assert.equal(response.statusCode, 200);
     assert.equal(response.json().text, "Hello\\nworld");
+  } finally {
+    await app.close();
+  }
+});
+
+test("returns an encouragement", async () => {
+  const app = await createTestApp();
+  try {
+    const response = await app.inject({
+      method: "POST",
+      url: "/encouragements",
+      headers: {
+        authorization: `Bearer ${serviceToken}`,
+        "content-type": "application/json",
+      },
+      payload: "{}",
+    });
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.json().text, "Keep going—you are making progress.");
+    assert.equal(response.json().request_id, String(response.headers["x-request-id"]));
+  } finally {
+    await app.close();
+  }
+});
+
+test("rejects non-empty encouragement input", async () => {
+  const app = await createTestApp();
+  try {
+    const response = await app.inject({
+      method: "POST",
+      url: "/encouragements",
+      headers: {
+        authorization: `Bearer ${serviceToken}`,
+        "content-type": "application/json",
+      },
+      payload: JSON.stringify({ prompt: "anything" }),
+    });
+    assert.equal(response.statusCode, 400);
+    assert.equal(response.json().error.code, "invalid_input");
   } finally {
     await app.close();
   }

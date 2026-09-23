@@ -13,14 +13,14 @@ import {
 } from "./errors.js";
 import type { AppConfig } from "./config.js";
 import { FixedWindowRateLimiter } from "./rate-limit.js";
-import type { ImageMediaType, ImageTextProvider } from "./provider.js";
+import type { BackendProvider, ImageMediaType } from "./provider.js";
 
 const jpegHeader = Buffer.from([0xff, 0xd8, 0xff]);
 const pngHeader = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
 export interface AppDependencies {
   config: AppConfig;
-  provider: ImageTextProvider;
+  provider: BackendProvider;
 }
 
 class ClientDisconnectedError extends Error {
@@ -147,12 +147,11 @@ async function readImage(request: FastifyRequest, config: AppConfig): Promise<Im
   return { data: image, mediaType };
 }
 
-async function runProvider(
+async function runWithDeadline<T>(
   request: FastifyRequest,
-  provider: ImageTextProvider,
-  image: ImageUpload,
+  operation: (signal: AbortSignal) => Promise<T>,
   config: AppConfig,
-): Promise<string | null | undefined> {
+): Promise<T | undefined> {
   const controller = new AbortController();
   let timedOut = false;
   let clientDisconnected = false;
@@ -177,7 +176,7 @@ async function runProvider(
 
   try {
     return await Promise.race([
-      provider.extractText(image.data, image.mediaType, controller.signal),
+      operation(controller.signal),
       timeoutPromise,
       disconnectPromise,
     ]);
@@ -226,7 +225,10 @@ export async function buildApp({ config, provider }: AppDependencies): Promise<F
     if (!tokenMatches(bearerToken(request), expectedTokenDigest)) {
       throw new ApiError(401, "authentication_failed", "Authentication required.");
     }
-    if (request.method === "POST" && request.url.split("?", 1)[0] === "/image-text") {
+    if (
+      request.method === "POST" &&
+      ["/image-text", "/encouragements"].includes(request.url.split("?", 1)[0])
+    ) {
       if (!rateLimiter.allow()) {
         const retryAfterSeconds = rateLimiter.retryAfterSeconds();
         throw new ApiError(
@@ -243,7 +245,33 @@ export async function buildApp({ config, provider }: AppDependencies): Promise<F
 
   app.post("/image-text", async (request, reply) => {
     const image = await readImage(request, config);
-    const text = await runProvider(request, provider, image, config);
+    const text = await runWithDeadline(
+      request,
+      (signal) => provider.extractText(image.data, image.mediaType, signal),
+      config,
+    );
+    if (text === undefined || reply.raw.destroyed) {
+      return;
+    }
+    return { text, request_id: request.id };
+  });
+
+  app.post("/encouragements", async (request, reply) => {
+    const body = request.body;
+    if (
+      typeof body !== "object" ||
+      body === null ||
+      Array.isArray(body) ||
+      Object.keys(body).length !== 0
+    ) {
+      throw new ApiError(400, "invalid_input", "The request body must be an empty JSON object.");
+    }
+
+    const text = await runWithDeadline(
+      request,
+      (signal) => provider.generateEncouragement(signal),
+      config,
+    );
     if (text === undefined || reply.raw.destroyed) {
       return;
     }

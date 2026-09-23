@@ -3,11 +3,31 @@ import Security
 
 struct KeychainStore: Keychaining, Sendable {
     private let service = "brauliopf.local-whisper"
-    private let account = "openai-api-key"
+    private let openAIAccount = "openai-api-key"
+    private let serviceTokenAccount = "backend-service-token"
 
     var hasAPIKey: Bool { loadAPIKey() != nil }
+    var hasServiceToken: Bool { loadServiceToken() != nil }
 
     func loadAPIKey() -> String? {
+        load(account: openAIAccount)
+    }
+
+    func loadServiceToken() -> String? {
+        load(account: serviceTokenAccount)
+    }
+
+    @discardableResult
+    func saveAPIKey(_ key: String) -> Bool {
+        save(key, account: openAIAccount)
+    }
+
+    @discardableResult
+    func saveServiceToken(_ token: String) -> Bool {
+        save(token, account: serviceTokenAccount)
+    }
+
+    private func load(account: String) -> String? {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -23,21 +43,20 @@ struct KeychainStore: Keychaining, Sendable {
     }
 
     @discardableResult
-    func saveAPIKey(_ key: String) -> Bool {
-        deleteAPIKey()
+    private func save(_ value: String, account: String) -> Bool {
+        _ = delete(account: account)
 
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
-            kSecValueData as String: Data(key.utf8),
+            kSecValueData as String: Data(value.utf8),
         ]
 
         return SecItemAdd(query as CFDictionary, nil) == errSecSuccess
     }
 
-    @discardableResult
-    func deleteAPIKey() -> Bool {
+    private func delete(account: String) -> Bool {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,

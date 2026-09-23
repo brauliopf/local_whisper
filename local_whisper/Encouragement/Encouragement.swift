@@ -5,17 +5,17 @@ import Foundation
 final class Encouragement {
     var openSettings: (() -> Void)?
 
-    private let openAI: any OpenAIClienting
+    private let backend: any BackendClienting
     private let keychain: any Keychaining
     private let toast: ToastPresenter
     private var task: Task<Void, Never>?
 
     init(
-        openAI: any OpenAIClienting,
+        backend: any BackendClienting,
         keychain: any Keychaining,
         toast: ToastPresenter
     ) {
-        self.openAI = openAI
+        self.backend = backend
         self.keychain = keychain
         self.toast = toast
     }
@@ -26,7 +26,7 @@ final class Encouragement {
     }
 
     func show() {
-        guard let apiKey = keychain.loadAPIKey(), !apiKey.isEmpty else {
+        guard let serviceToken = keychain.loadServiceToken(), !serviceToken.isEmpty else {
             openSettings?()
             return
         }
@@ -37,7 +37,7 @@ final class Encouragement {
         task = Task {
             await Telemetry.instrument(operation: "encouragement", trigger: "hotkey") {
                 do {
-                    let message = try await openAI.fetchEncouragement(apiKey: apiKey, model: ModelSettings.chat)
+                    let message = try await backend.fetchEncouragement(serviceToken: serviceToken)
                     guard !Task.isCancelled else { return }
                     toast.show(message: message, isError: false)
                 } catch {

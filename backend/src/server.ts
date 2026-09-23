@@ -9,6 +9,7 @@ const app = await buildApp({
   provider: createOpenAIImageTextProvider(
     config.openAIAPIKey,
     config.imageTextModel,
+    config.encouragementModel,
     config.providerTimeoutMs,
   ),
 });

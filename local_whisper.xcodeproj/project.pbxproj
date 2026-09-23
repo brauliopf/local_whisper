@@ -349,6 +349,7 @@
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				INFOPLIST_KEY_BACKEND_BASE_URL = "https://local-whisper-api-24n67dikla-uw.a.run.app";
 				SWIFT_VERSION = 5.0;
 			};
 			name = Debug;
@@ -384,6 +385,7 @@
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				INFOPLIST_KEY_BACKEND_BASE_URL = "https://local-whisper-api-24n67dikla-uw.a.run.app";
 				SWIFT_VERSION = 5.0;
 			};
 			name = Release;
