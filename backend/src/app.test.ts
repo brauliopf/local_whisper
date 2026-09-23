@@ -7,6 +7,7 @@ import type { BackendProvider } from "./provider.js";
 const serviceToken = "test-service-token";
 const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0xff, 0xd9]);
 const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0xff, 0xd9]);
+const m4a = Buffer.from([0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70, 0x4d, 0x34, 0x41]);
 
 const config: AppConfig = {
   port: 8080,
@@ -14,16 +15,23 @@ const config: AppConfig = {
   serviceToken,
   imageTextModel: "gpt-4o-mini",
   encouragementModel: "gpt-4o-mini",
+  transcriptionModel: "whisper-1",
   imageMaxBytes: 10 * 1024 * 1024,
-  requestBodyMaxBytes: 12 * 1024 * 1024,
+  audioMaxBytes: 25 * 1024 * 1024,
+  requestBodyMaxBytes: 27 * 1024 * 1024,
   providerTimeoutMs: 100,
   overallTimeoutMs: 150,
+  transcriptionProviderTimeoutMs: 120,
+  transcriptionOverallTimeoutMs: 150,
   rateLimitMax: 10,
   rateLimitWindowMs: 60_000,
 };
 
 class FakeProvider implements BackendProvider {
-  constructor(private readonly result: string | null = "Hello\\nworld") {}
+  constructor(
+    private readonly result: string | null = "Hello\\nworld",
+    private readonly transcriptionResult = "This is a test transcript.",
+  ) {}
 
   async extractText(): Promise<string | null> {
     return this.result;
@@ -32,16 +40,25 @@ class FakeProvider implements BackendProvider {
   async generateEncouragement(): Promise<string> {
     return "Keep going—you are making progress.";
   }
+
+  async transcribeAudio(): Promise<string> {
+    return this.transcriptionResult;
+  }
 }
 
-function multipartBody(image: Buffer, contentType = "image/jpeg") {
+function multipartBody(
+  data: Buffer,
+  contentType = "image/jpeg",
+  fieldName = "image",
+  filename = "screenshot.jpg",
+) {
   const boundary = "test-boundary";
   const prefix = Buffer.from(
-    `--${boundary}\r\nContent-Disposition: form-data; name="image"; filename="screenshot.jpg"\r\nContent-Type: ${contentType}\r\n\r\n`,
+    `--${boundary}\r\nContent-Disposition: form-data; name="${fieldName}"; filename="${filename}"\r\nContent-Type: ${contentType}\r\n\r\n`,
   );
   const suffix = Buffer.from(`\r\n--${boundary}--\r\n`);
   return {
-    body: Buffer.concat([prefix, image, suffix]),
+    body: Buffer.concat([prefix, data, suffix]),
     contentType: `multipart/form-data; boundary=${boundary}`,
   };
 }
@@ -151,6 +168,46 @@ test("returns an encouragement", async () => {
     assert.equal(response.statusCode, 200);
     assert.equal(response.json().text, "Keep going—you are making progress.");
     assert.equal(response.json().request_id, String(response.headers["x-request-id"]));
+  } finally {
+    await app.close();
+  }
+});
+
+test("transcribes M4A audio", async () => {
+  const app = await createTestApp();
+  const request = multipartBody(m4a, "audio/mp4", "audio", "recording.m4a");
+  try {
+    const response = await app.inject({
+      method: "POST",
+      url: "/transcriptions",
+      headers: {
+        authorization: `Bearer ${serviceToken}`,
+        "content-type": request.contentType,
+      },
+      payload: request.body,
+    });
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.json().text, "This is a test transcript.");
+  } finally {
+    await app.close();
+  }
+});
+
+test("preserves empty transcription output for silence handling", async () => {
+  const app = await createTestApp(new FakeProvider("Hello\\nworld", ""));
+  const request = multipartBody(m4a, "audio/mp4", "audio", "recording.m4a");
+  try {
+    const response = await app.inject({
+      method: "POST",
+      url: "/transcriptions",
+      headers: {
+        authorization: `Bearer ${serviceToken}`,
+        "content-type": request.contentType,
+      },
+      payload: request.body,
+    });
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.json().text, "");
   } finally {
     await app.close();
   }

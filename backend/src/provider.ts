@@ -1,4 +1,4 @@
-import OpenAI from "openai";
+import OpenAI, { toFile } from "openai";
 import {
   ProviderAuthenticationError,
   ProviderFailureError,
@@ -6,6 +6,7 @@ import {
 } from "./errors.js";
 
 export type ImageMediaType = "image/jpeg" | "image/png";
+export type AudioMediaType = "audio/mp4" | "audio/m4a" | "audio/x-m4a";
 
 export interface ImageTextProvider {
   extractText(
@@ -19,7 +20,15 @@ export interface EncouragementProvider {
   generateEncouragement(signal: AbortSignal): Promise<string>;
 }
 
-export type BackendProvider = ImageTextProvider & EncouragementProvider;
+export interface TranscriptionProvider {
+  transcribeAudio(
+    audio: Buffer,
+    mediaType: AudioMediaType,
+    signal: AbortSignal,
+  ): Promise<string>;
+}
+
+export type BackendProvider = ImageTextProvider & EncouragementProvider & TranscriptionProvider;
 
 export const imageTextPrompt = [
   "Extract all readable text from this image verbatim.",
@@ -67,6 +76,7 @@ export class OpenAIImageTextProvider implements BackendProvider {
     private readonly client: OpenAI,
     private readonly imageTextModel: string,
     private readonly encouragementModel: string,
+    private readonly transcriptionModel: string,
   ) {}
 
   async extractText(
@@ -125,17 +135,43 @@ export class OpenAIImageTextProvider implements BackendProvider {
     }
     return text;
   }
+
+  async transcribeAudio(
+    audio: Buffer,
+    mediaType: AudioMediaType,
+    signal: AbortSignal,
+  ): Promise<string> {
+    let response: OpenAI.Audio.Transcription;
+    try {
+      const file = await toFile(audio, "recording.m4a", { type: mediaType });
+      response = await this.client.audio.transcriptions.create(
+        {
+          file,
+          model: this.transcriptionModel,
+          language: "en",
+          response_format: "json",
+        },
+        { signal },
+      );
+    } catch (error) {
+      normalizeProviderError(error);
+    }
+
+    return response.text.trim();
+  }
 }
 
 export function createOpenAIImageTextProvider(
   apiKey: string,
   imageTextModel: string,
   encouragementModel: string,
+  transcriptionModel: string,
   timeoutMs: number,
 ): OpenAIImageTextProvider {
   return new OpenAIImageTextProvider(
     new OpenAI({ apiKey, timeout: timeoutMs, maxRetries: 0 }),
     imageTextModel,
     encouragementModel,
+    transcriptionModel,
   );
 }

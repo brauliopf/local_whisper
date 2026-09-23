@@ -1,5 +1,4 @@
 import Foundation
-import NaturalLanguage
 
 @MainActor
 @Observable
@@ -7,7 +6,7 @@ final class VoiceTranscription {
     var openSettings: (() -> Void)?
     var setEscapeEnabled: ((Bool) -> Void)?
 
-    private let openAI: any OpenAIClienting
+    private let backend: any BackendClienting
     private let keychain: any Keychaining
     private let toast: ToastPresenter
     private let recorder = AudioRecorder()
@@ -20,11 +19,11 @@ final class VoiceTranscription {
     private static let minimumRecordingDuration: TimeInterval = 0.5
 
     init(
-        openAI: any OpenAIClienting,
+        backend: any BackendClienting,
         keychain: any Keychaining,
         toast: ToastPresenter
     ) {
-        self.openAI = openAI
+        self.backend = backend
         self.keychain = keychain
         self.toast = toast
     }
@@ -56,7 +55,7 @@ final class VoiceTranscription {
     }
 
     private func startRecording() {
-        guard keychain.hasAPIKey else {
+        guard keychain.hasServiceToken else {
             openSettings?()
             return
         }
@@ -127,32 +126,19 @@ final class VoiceTranscription {
             }
             await Telemetry.instrument(operation: "audio_transcription", trigger: "hotkey") {
                 do {
-                    guard let apiKey = keychain.loadAPIKey(), !apiKey.isEmpty else {
-                        throw OpenAIError.missingAPIKey
+                    guard let serviceToken = keychain.loadServiceToken(), !serviceToken.isEmpty else {
+                        throw BackendError.missingServiceToken
                     }
-                    let text = try await openAI.transcribeAudio(
+                    let text = try await backend.transcribeAudio(
                         at: url,
-                        apiKey: apiKey,
-                        model: ModelSettings.transcribe
+                        serviceToken: serviceToken
                     )
                     guard !Task.isCancelled else { return }
                     guard !text.isEmpty else {
                         toast.show(message: "No speech detected.", isError: false)
                         return
                     }
-                    if Self.isEnglish(text) {
-                        Clipboard.copy(text)
-                        toast.show(message: "Copied to clipboard", isError: false)
-                        return
-                    }
-                    toast.show(message: "Making magic…", isError: false, autoDismiss: false)
-                    let translated = try await openAI.translateToEnglish(
-                        text: text,
-                        apiKey: apiKey,
-                        model: ModelSettings.chat
-                    )
-                    guard !Task.isCancelled else { return }
-                    Clipboard.copy(translated)
+                    Clipboard.copy(text)
                     toast.show(message: "Copied to clipboard", isError: false)
                 } catch {
                     guard !Task.isCancelled else { return }
@@ -163,9 +149,4 @@ final class VoiceTranscription {
         }
     }
 
-    private static func isEnglish(_ text: String) -> Bool {
-        let recognizer = NLLanguageRecognizer()
-        recognizer.processString(text)
-        return recognizer.dominantLanguage == .english
-    }
 }

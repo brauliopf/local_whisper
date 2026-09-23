@@ -33,7 +33,7 @@ final class AppCoordinator {
         keychain: any Keychaining
     ) {
         self.encouragement = Encouragement(backend: backend, keychain: keychain, toast: toast)
-        self.voice = VoiceTranscription(openAI: openAI, keychain: keychain, toast: toast)
+        self.voice = VoiceTranscription(backend: backend, keychain: keychain, toast: toast)
         self.screenshot = ScreenshotOCR(backend: backend, keychain: keychain, toast: toast)
         self.countdown = Countdown(toast: toast)
 

@@ -13,10 +13,15 @@ import {
 } from "./errors.js";
 import type { AppConfig } from "./config.js";
 import { FixedWindowRateLimiter } from "./rate-limit.js";
-import type { BackendProvider, ImageMediaType } from "./provider.js";
+import type {
+  AudioMediaType,
+  BackendProvider,
+  ImageMediaType,
+} from "./provider.js";
 
 const jpegHeader = Buffer.from([0xff, 0xd8, 0xff]);
 const pngHeader = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+const m4aContainerHeader = Buffer.from("ftyp");
 
 export interface AppDependencies {
   config: AppConfig;
@@ -55,6 +60,10 @@ function isPng(data: Buffer): boolean {
   return data.subarray(0, pngHeader.length).equals(pngHeader);
 }
 
+function isM4A(data: Buffer): boolean {
+  return data.subarray(4, 4 + m4aContainerHeader.length).equals(m4aContainerHeader);
+}
+
 function hasCode(error: unknown, code: string): boolean {
   return (
     typeof error === "object" &&
@@ -75,10 +84,10 @@ function toApiError(error: unknown): ApiError {
     return new ApiError(502, "provider_authentication", "The provider is not configured correctly.");
   }
   if (error instanceof ProviderFailureError) {
-    return new ApiError(502, "provider_failure", "The image could not be processed. Please try again.");
+    return new ApiError(502, "provider_failure", "The provider could not process the request. Please try again.");
   }
   if (hasCode(error, "FST_ERR_CTP_BODY_TOO_LARGE") || hasCode(error, "FST_REQ_FILE_TOO_LARGE")) {
-    return new ApiError(413, "file_too_large", "The image is too large.");
+    return new ApiError(413, "file_too_large", "The uploaded file is too large.");
   }
   if (hasCode(error, "FST_ERR_CTP_INVALID_MEDIA_TYPE")) {
     return new ApiError(400, "invalid_input", "The request must be multipart form data.");
@@ -89,6 +98,11 @@ function toApiError(error: unknown): ApiError {
 interface ImageUpload {
   data: Buffer;
   mediaType: ImageMediaType;
+}
+
+interface AudioUpload {
+  data: Buffer;
+  mediaType: AudioMediaType;
 }
 
 async function readImage(request: FastifyRequest, config: AppConfig): Promise<ImageUpload> {
@@ -147,15 +161,73 @@ async function readImage(request: FastifyRequest, config: AppConfig): Promise<Im
   return { data: image, mediaType };
 }
 
+async function readAudio(request: FastifyRequest, config: AppConfig): Promise<AudioUpload> {
+  if (!request.isMultipart()) {
+    throw new ApiError(400, "invalid_input", "The request must be multipart form data.");
+  }
+
+  let part;
+  try {
+    part = await request.file();
+  } catch (error) {
+    throw toApiError(error);
+  }
+
+  if (!part) {
+    throw new ApiError(400, "invalid_input", "The audio field is required.");
+  }
+  if (part.fieldname !== "audio") {
+    throw new ApiError(400, "invalid_input", "The audio field is required.");
+  }
+  const supportedTypes: AudioMediaType[] = ["audio/mp4", "audio/m4a", "audio/x-m4a"];
+  if (!supportedTypes.includes(part.mimetype as AudioMediaType)) {
+    throw new ApiError(400, "unsupported_file", "Only M4A audio is supported.");
+  }
+  const mediaType = part.mimetype as AudioMediaType;
+
+  const chunks: Buffer[] = [];
+  let size = 0;
+  try {
+    for await (const chunk of part.file) {
+      const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      size += buffer.length;
+      if (size > config.audioMaxBytes) {
+        throw new ApiError(413, "file_too_large", "The audio file is too large.");
+      }
+      chunks.push(buffer);
+    }
+  } catch (error) {
+    if (error instanceof ApiError) {
+      throw error;
+    }
+    throw toApiError(error);
+  }
+
+  if (part.file.truncated) {
+    throw new ApiError(413, "file_too_large", "The audio file is too large.");
+  }
+
+  const audio = Buffer.concat(chunks);
+  if (audio.length === 0) {
+    throw new ApiError(400, "invalid_input", "The audio field is required.");
+  }
+  if (!isM4A(audio)) {
+    throw new ApiError(400, "unsupported_file", "The uploaded file is not a valid M4A recording.");
+  }
+  return { data: audio, mediaType };
+}
+
 async function runWithDeadline<T>(
   request: FastifyRequest,
   operation: (signal: AbortSignal) => Promise<T>,
   config: AppConfig,
+  providerTimeoutMs = config.providerTimeoutMs,
+  overallTimeoutMs = config.overallTimeoutMs,
 ): Promise<T | undefined> {
   const controller = new AbortController();
   let timedOut = false;
   let clientDisconnected = false;
-  const timeoutMs = Math.min(config.providerTimeoutMs, config.overallTimeoutMs);
+  const timeoutMs = Math.min(providerTimeoutMs, overallTimeoutMs);
   const timeout = setTimeout(() => {
     timedOut = true;
     controller.abort();
@@ -211,7 +283,7 @@ export async function buildApp({ config, provider }: AppDependencies): Promise<F
     limits: {
       fields: 0,
       files: 1,
-      fileSize: config.imageMaxBytes,
+      fileSize: config.requestBodyMaxBytes,
       parts: 1,
     },
   });
@@ -227,7 +299,7 @@ export async function buildApp({ config, provider }: AppDependencies): Promise<F
     }
     if (
       request.method === "POST" &&
-      ["/image-text", "/encouragements"].includes(request.url.split("?", 1)[0])
+      ["/image-text", "/encouragements", "/transcriptions"].includes(request.url.split("?", 1)[0])
     ) {
       if (!rateLimiter.allow()) {
         const retryAfterSeconds = rateLimiter.retryAfterSeconds();
@@ -271,6 +343,21 @@ export async function buildApp({ config, provider }: AppDependencies): Promise<F
       request,
       (signal) => provider.generateEncouragement(signal),
       config,
+    );
+    if (text === undefined || reply.raw.destroyed) {
+      return;
+    }
+    return { text, request_id: request.id };
+  });
+
+  app.post("/transcriptions", async (request, reply) => {
+    const audio = await readAudio(request, config);
+    const text = await runWithDeadline(
+      request,
+      (signal) => provider.transcribeAudio(audio.data, audio.mediaType, signal),
+      config,
+      config.transcriptionProviderTimeoutMs,
+      config.transcriptionOverallTimeoutMs,
     );
     if (text === undefined || reply.raw.destroyed) {
       return;

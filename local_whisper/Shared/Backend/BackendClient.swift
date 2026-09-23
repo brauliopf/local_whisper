@@ -33,6 +33,7 @@ nonisolated struct BackendImageTextResponse: Decodable, Sendable {
 nonisolated protocol BackendClienting: Sendable {
     func extractText(fromJPEG data: Data, serviceToken: String) async throws -> String?
     func fetchEncouragement(serviceToken: String) async throws -> String
+    func transcribeAudio(at fileURL: URL, serviceToken: String) async throws -> String
 }
 
 nonisolated enum BackendConfiguration {
@@ -72,6 +73,7 @@ actor BackendClient: BackendClienting {
         request.httpBody = Self.multipartBody(
             data: data,
             boundary: boundary,
+            fieldName: "image",
             filename: "screenshot.jpg",
             contentType: "image/jpeg"
         )
@@ -92,10 +94,35 @@ actor BackendClient: BackendClienting {
         return text
     }
 
+    func transcribeAudio(at fileURL: URL, serviceToken: String) async throws -> String {
+        guard !serviceToken.isEmpty else { throw BackendError.missingServiceToken }
+        let audio: Data
+        do {
+            audio = try Data(contentsOf: fileURL)
+        } catch {
+            throw BackendError.invalidResponse
+        }
+
+        let boundary = UUID().uuidString
+        var request = makeRequest(path: "transcriptions", serviceToken: serviceToken)
+        request.httpMethod = "POST"
+        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+        request.httpBody = Self.multipartBody(
+            data: audio,
+            boundary: boundary,
+            fieldName: "audio",
+            filename: fileURL.lastPathComponent,
+            contentType: "audio/mp4"
+        )
+
+        let response: BackendImageTextResponse = try await send(request)
+        return response.text ?? ""
+    }
+
     private func makeRequest(path: String, serviceToken: String) -> URLRequest {
         var request = URLRequest(url: baseURL.appendingPathComponent(path))
         request.setValue("Bearer \(serviceToken)", forHTTPHeaderField: "Authorization")
-        request.timeoutInterval = 90
+        request.timeoutInterval = 120
         return request
     }
 
@@ -130,12 +157,13 @@ actor BackendClient: BackendClienting {
     private static func multipartBody(
         data: Data,
         boundary: String,
+        fieldName: String,
         filename: String,
         contentType: String
     ) -> Data {
         var body = Data()
         body.append(Data("--\(boundary)\r\n".utf8))
-        body.append(Data("Content-Disposition: form-data; name=\"image\"; filename=\"\(filename)\"\r\n".utf8))
+        body.append(Data("Content-Disposition: form-data; name=\"\(fieldName)\"; filename=\"\(filename)\"\r\n".utf8))
         body.append(Data("Content-Type: \(contentType)\r\n\r\n".utf8))
         body.append(data)
         body.append(Data("\r\n--\(boundary)--\r\n".utf8))

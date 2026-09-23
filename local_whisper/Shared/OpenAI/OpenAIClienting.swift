@@ -24,7 +24,6 @@ nonisolated protocol OpenAIClienting: Sendable {
     func listModels(apiKey: String) async throws -> [String]
     func fetchEncouragement(apiKey: String, model: String) async throws -> String
     func transcribeAudio(at fileURL: URL, apiKey: String, model: String) async throws -> String
-    func translateToEnglish(text: String, apiKey: String, model: String) async throws -> String
     func extractText(fromJPEG data: Data, apiKey: String, model: String) async throws -> String?
 }
 

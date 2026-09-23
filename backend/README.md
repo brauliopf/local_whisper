@@ -43,6 +43,16 @@ Content-Type: application/json
 
 The backend owns the encouragement prompt and returns one short sentence with at most 15 words.
 
+### Transcribe English audio
+
+```http
+POST /transcriptions
+Authorization: Bearer <service-token>
+Content-Type: multipart/form-data
+```
+
+The multipart request must contain exactly one M4A file field named `audio`. The backend sends it to OpenAI audio transcriptions with `model=whisper-1` and `language=en`. The client does not provide a language or model parameter. Input is assumed to be English; no language detection, translation, or rewriting is performed.
+
 ## Local development
 
 Copy `.env.example` to `.env` and provide an OpenAI key and service token. `.env` is ignored by Git.
