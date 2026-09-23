@@ -44,20 +44,12 @@ npm run dev
 
 The service listens on `http://127.0.0.1:8080` by default.
 
-A request from Postman or curl uses the `image` form-data field and the bearer token from `.env`:
+A request from curl uses the `image` form-data field and the bearer token from `.env`:
 
 ```sh
 curl -i http://127.0.0.1:8080/image-text \
   -H "Authorization: Bearer $SERVICE_TOKEN" \
   -F "image=@/path/to/screenshot.png;type=image/png"
-```
-
-A ready-to-import Postman collection is in `postman/local-whisper-api.postman_collection.json`. Set its `serviceToken` variable using:
-
-```sh
-gcloud secrets versions access latest \
-  --secret=service-token \
-  --project=local-whisper-509423
 ```
 
 For the deployed service, the current base URL is:
@@ -70,4 +62,4 @@ https://local-whisper-api-24n67dikla-uw.a.run.app
 
 The first deployment target is the `local-whisper-509423` project in `us-west1`, with service name `local-whisper-api`. Store `OPENAI_API_KEY` and `SERVICE_TOKEN` in Secret Manager; do not put either value in a deployment command or checked-in file.
 
-The service is intended to be externally reachable over HTTPS and protected by its application bearer token. Cloud Run IAM authentication is not used by the standalone Postman client.
+The service is intended to be externally reachable over HTTPS and protected by its application bearer token. Cloud Run IAM authentication is not used by the standalone curl client.
