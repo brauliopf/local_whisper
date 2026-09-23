@@ -18,6 +18,7 @@ import type {
   BackendProvider,
   ImageMediaType,
 } from "./provider.js";
+import type { TranscriptionWorkflow } from "./transcription.js";
 
 const jpegHeader = Buffer.from([0xff, 0xd8, 0xff]);
 const pngHeader = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
@@ -26,6 +27,7 @@ const m4aContainerHeader = Buffer.from("ftyp");
 export interface AppDependencies {
   config: AppConfig;
   provider: BackendProvider;
+  transcriptionWorkflow: TranscriptionWorkflow;
 }
 
 class ClientDisconnectedError extends Error {
@@ -266,7 +268,11 @@ async function runWithDeadline<T>(
   }
 }
 
-export async function buildApp({ config, provider }: AppDependencies): Promise<FastifyInstance> {
+export async function buildApp({
+  config,
+  provider,
+  transcriptionWorkflow,
+}: AppDependencies): Promise<FastifyInstance> {
   const expectedTokenDigest = createHash("sha256").update(config.serviceToken).digest();
   const rateLimiter = new FixedWindowRateLimiter(
     config.rateLimitMax,
@@ -313,7 +319,13 @@ export async function buildApp({ config, provider }: AppDependencies): Promise<F
     }
   });
 
-  app.get("/status", async () => ({ status: "ok" }));
+  app.get("/status", async () => ({
+    status: "ok",
+    providers: {
+      openai: { configured: Boolean(config.openAIAPIKey) },
+      typesafe: { configured: Boolean(config.typesafeAPIKey) },
+    },
+  }));
 
   app.post("/image-text", async (request, reply) => {
     const image = await readImage(request, config);
@@ -352,17 +364,48 @@ export async function buildApp({ config, provider }: AppDependencies): Promise<F
 
   app.post("/transcriptions", async (request, reply) => {
     const audio = await readAudio(request, config);
-    const text = await runWithDeadline(
+    const result = await runWithDeadline(
       request,
-      (signal) => provider.transcribeAudio(audio.data, audio.mediaType, signal),
+      (signal) =>
+        transcriptionWorkflow.transcribeAudio(audio.data, audio.mediaType, signal),
       config,
-      config.transcriptionProviderTimeoutMs,
+      config.transcriptionOverallTimeoutMs,
       config.transcriptionOverallTimeoutMs,
     );
-    if (text === undefined || reply.raw.destroyed) {
+    if (result === undefined || reply.raw.destroyed) {
       return;
     }
-    return { text, request_id: request.id };
+
+    if (result.languageJudgment) {
+      request.log.info(
+        {
+          requestId: request.id,
+          provider: "typesafe",
+          model: result.languageJudgment.model,
+          question: "majority_english",
+          noul: result.languageJudgment.probability,
+          branch: result.branch,
+          usage: result.languageJudgment.usage,
+        },
+        "typesafe_judgment",
+      );
+    }
+    if (result.fallbackReason) {
+      request.log.warn(
+        {
+          requestId: request.id,
+          branch: result.branch,
+          reason: result.fallbackReason,
+        },
+        "typesafe_fallback",
+      );
+    }
+
+    return {
+      text: result.text,
+      is_translated: result.isTranslated,
+      request_id: request.id,
+    };
   });
 
   app.setErrorHandler((error, request, reply) => {

@@ -4,21 +4,28 @@ import type { AppConfig } from "./config.js";
 import { buildApp } from "./app.js";
 import { ProviderFailureError } from "./errors.js";
 import type { BackendProvider } from "./provider.js";
+import { TranscriptionWorkflow } from "./transcription.js";
 
 const config: AppConfig = {
   port: 8080,
   openAIAPIKey: "not-used-in-tests",
   serviceToken: "test-service-token",
+  typesafeAPIKey: "",
   imageTextModel: "gpt-4o-mini",
   encouragementModel: "gpt-4o-mini",
   transcriptionModel: "whisper-1",
+  translationModel: "gpt-4o-mini",
+  typesafeModel: "jev-1.13.0",
   imageMaxBytes: 10 * 1024 * 1024,
   audioMaxBytes: 25 * 1024 * 1024,
   requestBodyMaxBytes: 27 * 1024 * 1024,
   providerTimeoutMs: 100,
   overallTimeoutMs: 150,
-  transcriptionProviderTimeoutMs: 120,
-  transcriptionOverallTimeoutMs: 150,
+  transcriptionProviderTimeoutMs: 70,
+  transcriptionOverallTimeoutMs: 105,
+  typesafeProviderTimeoutMs: 5,
+  translationProviderTimeoutMs: 25,
+  transcriptMaxChars: 20_000,
   rateLimitMax: 10,
   rateLimitWindowMs: 60_000,
 };
@@ -37,6 +44,21 @@ class FailingProvider implements BackendProvider {
   async transcribeAudio(): Promise<string> {
     throw new ProviderFailureError();
   }
+
+  async translateToEnglish(): Promise<string> {
+    throw new ProviderFailureError();
+  }
+}
+
+function transcriptionWorkflow(provider: BackendProvider) {
+  return new TranscriptionWorkflow({
+    transcriber: provider,
+    translator: provider,
+    transcriptionTimeoutMs: config.transcriptionProviderTimeoutMs,
+    typesafeTimeoutMs: config.typesafeProviderTimeoutMs,
+    translationTimeoutMs: config.translationProviderTimeoutMs,
+    maxTranscriptChars: config.transcriptMaxChars,
+  });
 }
 
 function multipartBody() {
@@ -52,7 +74,12 @@ function multipartBody() {
 }
 
 test("normalizes provider failures", async () => {
-  const app = await buildApp({ config, provider: new FailingProvider() });
+  const provider = new FailingProvider();
+  const app = await buildApp({
+    config,
+    provider,
+    transcriptionWorkflow: transcriptionWorkflow(provider),
+  });
   const request = multipartBody();
   try {
     const response = await app.inject({
