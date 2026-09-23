@@ -21,14 +21,12 @@ final class AppCoordinator {
 
     convenience init() {
         self.init(
-            openAI: OpenAIClient(),
             backend: BackendClient(),
             keychain: KeychainStore()
         )
     }
 
     init(
-        openAI: any OpenAIClienting,
         backend: any BackendClienting,
         keychain: any Keychaining
     ) {

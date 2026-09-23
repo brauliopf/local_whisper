@@ -77,7 +77,7 @@ final class ScreenshotOCR {
             let rep = NSBitmapImageRep(data: tiff),
             let data = rep.representation(using: .jpeg, properties: [.compressionFactor: 0.8])
         else {
-            throw OpenAIError.apiError("Couldn't read the screenshot.")
+            throw BackendError.invalidResponse
         }
         return data
     }

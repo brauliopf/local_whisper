@@ -189,7 +189,7 @@ actor LocalTelemetry {
             parentSpanID: nil,
             operation: operation,
             trigger: trigger,
-            rawPayloadsEnabled: ModelSettings.rawTelemetryEnabled
+            rawPayloadsEnabled: TelemetrySettings.rawTelemetryEnabled
         )
         return TelemetrySpan(
             context: context,
