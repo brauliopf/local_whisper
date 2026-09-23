@@ -31,6 +31,18 @@ Success:
 
 When no readable text is found, `text` is `null`.
 
+### Fetch encouragement
+
+```http
+POST /encouragements
+Authorization: Bearer <service-token>
+Content-Type: application/json
+
+{}
+```
+
+The backend owns the encouragement prompt and returns one short sentence with at most 15 words.
+
 ## Local development
 
 Copy `.env.example` to `.env` and provide an OpenAI key and service token. `.env` is ignored by Git.

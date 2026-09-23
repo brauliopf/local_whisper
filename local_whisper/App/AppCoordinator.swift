@@ -20,16 +20,21 @@ final class AppCoordinator {
     private var didFinishLaunching = false
 
     convenience init() {
-        self.init(openAI: OpenAIClient(), keychain: KeychainStore())
+        self.init(
+            openAI: OpenAIClient(),
+            backend: BackendClient(),
+            keychain: KeychainStore()
+        )
     }
 
     init(
         openAI: any OpenAIClienting,
+        backend: any BackendClienting,
         keychain: any Keychaining
     ) {
-        self.encouragement = Encouragement(openAI: openAI, keychain: keychain, toast: toast)
+        self.encouragement = Encouragement(backend: backend, keychain: keychain, toast: toast)
         self.voice = VoiceTranscription(openAI: openAI, keychain: keychain, toast: toast)
-        self.screenshot = ScreenshotOCR(openAI: openAI, keychain: keychain, toast: toast)
+        self.screenshot = ScreenshotOCR(backend: backend, keychain: keychain, toast: toast)
         self.countdown = Countdown(toast: toast)
 
         voice.setEscapeEnabled = { [weak self] enabled in

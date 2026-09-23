@@ -3,6 +3,7 @@ export interface AppConfig {
   openAIAPIKey: string;
   serviceToken: string;
   imageTextModel: string;
+  encouragementModel: string;
   imageMaxBytes: number;
   requestBodyMaxBytes: number;
   providerTimeoutMs: number;
@@ -38,6 +39,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     openAIAPIKey: required(env, "OPENAI_API_KEY"),
     serviceToken: required(env, "SERVICE_TOKEN"),
     imageTextModel: env.IMAGE_TEXT_MODEL?.trim() || "gpt-4o-mini",
+    encouragementModel: env.ENCOURAGEMENT_MODEL?.trim() || "gpt-4o-mini",
     imageMaxBytes: positiveInteger(env, "IMAGE_MAX_BYTES", 10 * 1024 * 1024),
     requestBodyMaxBytes: positiveInteger(
       env,

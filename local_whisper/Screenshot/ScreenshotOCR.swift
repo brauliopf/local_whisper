@@ -6,17 +6,17 @@ import Foundation
 final class ScreenshotOCR {
     var openSettings: (() -> Void)?
 
-    private let openAI: any OpenAIClienting
+    private let backend: any BackendClienting
     private let keychain: any Keychaining
     private let toast: ToastPresenter
     private var task: Task<Void, Never>?
 
     init(
-        openAI: any OpenAIClienting,
+        backend: any BackendClienting,
         keychain: any Keychaining,
         toast: ToastPresenter
     ) {
-        self.openAI = openAI
+        self.backend = backend
         self.keychain = keychain
         self.toast = toast
     }
@@ -30,7 +30,7 @@ final class ScreenshotOCR {
     func captureAndRead() {
         cancel()
 
-        guard let apiKey = keychain.loadAPIKey(), !apiKey.isEmpty else {
+        guard let serviceToken = keychain.loadServiceToken(), !serviceToken.isEmpty else {
             openSettings?()
             return
         }
@@ -53,7 +53,7 @@ final class ScreenshotOCR {
 
                 do {
                     let jpeg = try Self.jpegData(from: url)
-                    let text = try await openAI.extractText(fromJPEG: jpeg, apiKey: apiKey, model: ModelSettings.chat)
+                    let text = try await backend.extractText(fromJPEG: jpeg, serviceToken: serviceToken)
                     guard !Task.isCancelled else { return }
                     guard let text else {
                         toast.show(message: "No text found", isError: false)

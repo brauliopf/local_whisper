@@ -38,6 +38,9 @@ nonisolated protocol OpenAIResponsesClienting: Sendable {
 
 nonisolated protocol Keychaining: Sendable {
     var hasAPIKey: Bool { get }
+    var hasServiceToken: Bool { get }
     func loadAPIKey() -> String?
+    func loadServiceToken() -> String?
     @discardableResult func saveAPIKey(_ key: String) -> Bool
+    @discardableResult func saveServiceToken(_ token: String) -> Bool
 }

@@ -5,7 +5,9 @@ struct SettingsView: View {
     private let openAI: any OpenAIClienting
 
     @State private var apiKey = ""
+    @State private var serviceToken = ""
     @State private var statusMessage: String?
+    @State private var backendStatusMessage: String?
     @State private var chatModel = ModelSettings.chat
     @State private var transcribeModel = ModelSettings.transcribe
     @State private var chatIDs = [ModelSettings.chat]
@@ -27,6 +29,31 @@ struct SettingsView: View {
 
     var body: some View {
         Form {
+            Section {
+                SecureField("Backend service token", text: $serviceToken)
+                    .textFieldStyle(.roundedBorder)
+
+                HStack {
+                    Button("Save") {
+                        if keychain.saveServiceToken(serviceToken) {
+                            backendStatusMessage = "Saved."
+                        } else {
+                            backendStatusMessage = "Couldn't save the token."
+                        }
+                    }
+                    .disabled(serviceToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
+                    if let backendStatusMessage {
+                        Text(backendStatusMessage)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            } header: {
+                Text("Backend")
+            } footer: {
+                Text("The token is stored securely in the macOS Keychain.")
+            }
+
             Section {
                 SecureField("OpenAI API Key", text: $apiKey)
                     .textFieldStyle(.roundedBorder)
@@ -127,6 +154,7 @@ struct SettingsView: View {
         .padding()
         .frame(width: 440)
         .onAppear {
+            serviceToken = keychain.loadServiceToken() ?? ""
             apiKey = keychain.loadAPIKey() ?? ""
             chatModel = ModelSettings.chat
             transcribeModel = ModelSettings.transcribe
