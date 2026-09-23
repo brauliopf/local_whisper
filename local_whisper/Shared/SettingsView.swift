@@ -2,29 +2,14 @@ import SwiftUI
 
 struct SettingsView: View {
     private let keychain: any Keychaining
-    private let openAI: any OpenAIClienting
 
-    @State private var apiKey = ""
     @State private var serviceToken = ""
-    @State private var statusMessage: String?
     @State private var backendStatusMessage: String?
-    @State private var chatModel = ModelSettings.chat
-    @State private var transcribeModel = ModelSettings.transcribe
-    @State private var chatIDs = [ModelSettings.chat]
-    @State private var transcribeIDs = [ModelSettings.transcribe]
-    @State private var isLoadingModels = false
-    @State private var modelsError: String?
-    @State private var pickersEnabled = false
-    @State private var loadTask: Task<Void, Never>?
     @State private var countdownMinutesText = String(TimerSettings.minutes)
     @FocusState private var countdownMinutesFocused: Bool
 
-    init(
-        keychain: any Keychaining = KeychainStore(),
-        openAI: any OpenAIClienting = OpenAIClient()
-    ) {
+    init(keychain: any Keychaining = KeychainStore()) {
         self.keychain = keychain
-        self.openAI = openAI
     }
 
     var body: some View {
@@ -52,32 +37,6 @@ struct SettingsView: View {
                 Text("Backend")
             } footer: {
                 Text("The token is stored securely in the macOS Keychain. Voice input is English-only and is transcribed without automatic translation.")
-            }
-
-            Section {
-                SecureField("OpenAI API Key", text: $apiKey)
-                    .textFieldStyle(.roundedBorder)
-
-                HStack {
-                    Button("Save") {
-                        if keychain.saveAPIKey(apiKey) {
-                            statusMessage = "Saved."
-                            loadModels()
-                        } else {
-                            statusMessage = "Couldn't save the key."
-                        }
-                    }
-                    .disabled(apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-
-                    if let statusMessage {
-                        Text(statusMessage)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-            } header: {
-                Text("API Key")
-            } footer: {
-                Text("Your key is stored securely in the macOS Keychain.")
             }
 
             Section {
@@ -118,65 +77,27 @@ struct SettingsView: View {
 
             Section {
                 Toggle("Store raw LLM text in telemetry", isOn: Binding(
-                    get: { ModelSettings.rawTelemetryEnabled },
-                    set: { ModelSettings.rawTelemetryEnabled = $0 }
+                    get: { TelemetrySettings.rawTelemetryEnabled },
+                    set: { TelemetrySettings.rawTelemetryEnabled = $0 }
                 ))
             } header: {
                 Text("Observability")
             }
-
-            Section {
-                Picker("Chat", selection: $chatModel) {
-                    ForEach(chatIDs, id: \.self) { id in
-                        Text(id).tag(id)
-                    }
-                }
-                .disabled(!pickersEnabled)
-
-                Picker("Transcribe", selection: $transcribeModel) {
-                    ForEach(transcribeIDs, id: \.self) { id in
-                        Text(id).tag(id)
-                    }
-                }
-                .disabled(!pickersEnabled)
-            } header: {
-                Text("LLM Model")
-            } footer: {
-                if isLoadingModels {
-                    Text("Loading models…")
-                } else if let modelsError {
-                    Text(modelsError)
-                }
-            }
         }
         .formStyle(.grouped)
-        .pickerStyle(.menu)
         .padding()
         .frame(width: 440)
         .onAppear {
             serviceToken = keychain.loadServiceToken() ?? ""
-            apiKey = keychain.loadAPIKey() ?? ""
-            chatModel = ModelSettings.chat
-            transcribeModel = ModelSettings.transcribe
-            chatIDs = [chatModel]
-            transcribeIDs = [transcribeModel]
             countdownMinutesText = String(TimerSettings.minutes)
-            loadModels()
         }
         .onChange(of: countdownMinutesFocused) { _, focused in
             if !focused {
                 commitCountdownMinutes()
             }
         }
-        .onChange(of: chatModel) { _, newValue in
-            ModelSettings.chat = newValue
-        }
-        .onChange(of: transcribeModel) { _, newValue in
-            ModelSettings.transcribe = newValue
-        }
         .onDisappear {
             commitCountdownMinutes()
-            loadTask?.cancel()
         }
     }
 
@@ -192,39 +113,5 @@ struct SettingsView: View {
         let minutes = TimerSettings.clamp(parsed ?? TimerSettings.minutes)
         TimerSettings.minutes = minutes
         countdownMinutesText = String(minutes)
-    }
-
-    private func loadModels() {
-        loadTask?.cancel()
-
-        guard let key = keychain.loadAPIKey(), !key.isEmpty else {
-            isLoadingModels = false
-            modelsError = nil
-            pickersEnabled = false
-            chatIDs = [ModelSettings.chat]
-            transcribeIDs = [ModelSettings.transcribe]
-            return
-        }
-
-        isLoadingModels = true
-        modelsError = nil
-        pickersEnabled = false
-
-        loadTask = Task {
-            defer { isLoadingModels = false }
-            do {
-                let ids = try await openAI.listModels(apiKey: key)
-                guard !Task.isCancelled else { return }
-                chatIDs = OpenAIModels.chatIDs(from: ids, saved: ModelSettings.chat)
-                transcribeIDs = OpenAIModels.transcribeIDs(from: ids, saved: ModelSettings.transcribe)
-                pickersEnabled = true
-            } catch {
-                guard !Task.isCancelled else { return }
-                chatIDs = OpenAIModels.merged(saved: ModelSettings.chat, into: [])
-                transcribeIDs = OpenAIModels.merged(saved: ModelSettings.transcribe, into: [])
-                modelsError = error.localizedDescription
-                pickersEnabled = true
-            }
-        }
     }
 }

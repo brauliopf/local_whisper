@@ -3,23 +3,12 @@ import Security
 
 struct KeychainStore: Keychaining, Sendable {
     private let service = "brauliopf.local-whisper"
-    private let openAIAccount = "openai-api-key"
     private let serviceTokenAccount = "backend-service-token"
 
-    var hasAPIKey: Bool { loadAPIKey() != nil }
     var hasServiceToken: Bool { loadServiceToken() != nil }
-
-    func loadAPIKey() -> String? {
-        load(account: openAIAccount)
-    }
 
     func loadServiceToken() -> String? {
         load(account: serviceTokenAccount)
-    }
-
-    @discardableResult
-    func saveAPIKey(_ key: String) -> Bool {
-        save(key, account: openAIAccount)
     }
 
     @discardableResult
