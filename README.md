@@ -29,7 +29,7 @@ local_whisper/
 │   ├── Shared/                  Backend client, Keychain, telemetry, hotkeys, toast, Settings
 │   ├── local_whisper.entitlements  Hardened Runtime audio-input
 │   └── Assets.xcassets
-├── backend/                     Fastify API service and Postman collection
+├── backend/                     Fastify API service
 ├── .github/pull_request_template.md
 └── AGENTS.md                    PR conventions
 ```
