@@ -59,6 +59,7 @@ final class StatusItem: NSObject {
         menu.addItem(menuItem("Show Encouragement", key: "e", action: #selector(showEncouragement)))
         menu.addItem(menuItem("Transcribe", key: "w", action: #selector(transcribe)))
         menu.addItem(menuItem("Read screenshot", key: "r", action: #selector(readScreenshot)))
+        menu.addItem(menuItem("Computer use", key: "l", action: #selector(computerUse)))
         if isRunning {
             menu.addItem(menuItem("Cancel Timer", key: nil, action: #selector(cancelTimer)))
         } else {
@@ -95,6 +96,10 @@ final class StatusItem: NSObject {
 
     @objc private func readScreenshot() {
         coordinator.readScreenshot()
+    }
+
+    @objc private func computerUse() {
+        coordinator.toggleComputerUse()
     }
 
     @objc private func startTimer() {

@@ -20,6 +20,8 @@ nonisolated struct BrowserArtifact: Codable, Sendable, Equatable {
     var label: String
 }
 
+typealias BrowserScreenshot = BrowserArtifact
+
 nonisolated struct BrowserState: Codable, Sendable, Equatable {
     var url: String
     var title: String
@@ -35,6 +37,7 @@ nonisolated struct BrowserExecutorResult: Codable, Sendable, Equatable {
     var value: BrowserTableResult?
     var text: [String]?
     var artifacts: [BrowserArtifact]?
+    var screenshot: BrowserScreenshot?
     var browser: BrowserState
     var error: BrowserResultError?
 }
@@ -76,6 +79,7 @@ nonisolated enum BrowserExecutorError: LocalizedError, Sendable {
 nonisolated protocol BrowserExecuting: Sendable {
     func start(configuration: BrowserConfiguration) async throws -> BrowserSessionInfo
     func execute(module: String) async throws -> BrowserExecutorResult
+    func consumeScreenshot(from result: BrowserExecutorResult) throws -> Data
     func stop() async
 }
 
@@ -170,6 +174,30 @@ actor NodeBrowserExecutor: BrowserExecuting {
             }
             throw error
         }
+    }
+
+    nonisolated func consumeScreenshot(from result: BrowserExecutorResult) throws -> Data {
+        guard let screenshot = result.screenshot else {
+            throw BrowserExecutorError.protocolError("The executor did not return a screenshot.")
+        }
+        let url = URL(fileURLWithPath: screenshot.path)
+        defer {
+            try? FileManager.default.removeItem(at: url)
+            for artifact in result.artifacts ?? [] {
+                try? FileManager.default.removeItem(at: URL(fileURLWithPath: artifact.path))
+            }
+        }
+        let data: Data
+        do {
+            data = try Data(contentsOf: url)
+        } catch {
+            throw BrowserExecutorError.protocolError("The screenshot could not be read.")
+        }
+        guard data.count <= 4 * 1024 * 1024,
+              data.starts(with: [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]) else {
+            throw BrowserExecutorError.protocolError("The executor returned an invalid screenshot.")
+        }
+        return data
     }
 
     func stop() async {

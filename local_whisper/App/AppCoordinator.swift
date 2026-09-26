@@ -16,6 +16,7 @@ final class AppCoordinator {
     private let encouragement: Encouragement
     private let voice: VoiceTranscription
     private let screenshot: ScreenshotOCR
+    private let computerUse: ComputerUseCoordinator
     let countdown: Countdown
     private var didFinishLaunching = false
 
@@ -33,6 +34,7 @@ final class AppCoordinator {
         self.encouragement = Encouragement(backend: backend, keychain: keychain, toast: toast)
         self.voice = VoiceTranscription(backend: backend, keychain: keychain, toast: toast)
         self.screenshot = ScreenshotOCR(backend: backend, keychain: keychain, toast: toast)
+        self.computerUse = ComputerUseCoordinator(backend: backend, keychain: keychain, toast: toast)
         self.countdown = Countdown(toast: toast)
 
         voice.setEscapeEnabled = { [weak self] enabled in
@@ -52,6 +54,9 @@ final class AppCoordinator {
         }
         hotkeys.onSettings = { [weak self] in
             self?.openSettings?()
+        }
+        hotkeys.onComputerUse = { [weak self] in
+            self?.toggleComputerUse()
         }
         hotkeys.onEscape = { [weak self] in
             self?.voice.cancelRecording()
@@ -93,6 +98,12 @@ final class AppCoordinator {
                 isError: true
             )
         }
+        if !registration.computerUse {
+            toast.show(
+                message: "Couldn't register ⌃⌥L — another app may already use that shortcut.",
+                isError: true
+            )
+        }
     }
 
     func showEncouragement() {
@@ -113,5 +124,21 @@ final class AppCoordinator {
         voice.cancelInFlightWork()
         encouragement.cancel()
         screenshot.captureAndRead()
+    }
+
+    func toggleComputerUse() {
+        screenshot.cancel()
+        encouragement.cancel()
+        if voice.isRecording && !voice.isComputerUseRecording {
+            voice.cancelRecording(showToast: false)
+            voice.cancelInFlightWork()
+        }
+        if !voice.isRecording {
+            voice.cancelInFlightWork()
+            computerUse.beginRecording()
+        }
+        voice.toggleForComputerUse { [weak self] result in
+            self?.computerUse.receiveInstruction(result)
+        }
     }
 }

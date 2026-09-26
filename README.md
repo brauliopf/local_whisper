@@ -8,6 +8,7 @@ A macOS **menu bar** app (no Dock icon) that stays out of the way and does four 
 | **⌃⌥W** | Record audio (tap again to stop, Escape to cancel), transcribe and translate through the backend, copy text to the clipboard |
 | **⌃⌥R** | System screenshot picker (drag a region; **Space** for a window; **Escape** to cancel), extract text through the backend, copy to the clipboard |
 | **⌃⌥T** | Start a timer (default 20 minutes; length configurable in Settings). Remaining time shows next to the menu bar icon. Pressing again while running does nothing. |
+| **⌃⌥L** | Record an instruction, then plan and execute guarded actions in a new visible Playwright browser. Risky browser actions pause for approval. |
 
 The backend service token is entered in **Settings** and stored in the **macOS Keychain**. Voice input may be multilingual; the backend transcribes the source language, uses TypeSafe Jev to determine whether translation is needed, and returns English when translation is required. Provider credentials and model choices are owned by the backend; the Mac no longer needs an OpenAI API key.
 
@@ -26,6 +27,7 @@ local_whisper/
 │   ├── Voice/                   ⌃⌥W record + transcribe
 │   ├── Screenshot/              ⌃⌥R OCR
 │   ├── Countdown/               ⌃⌥T timer
+│   ├── ComputerUse/             Headed Playwright adapter, session coordinator, approval panel
 │   ├── Shared/                  Backend client, Keychain, telemetry, hotkeys, toast, Settings
 │   ├── local_whisper.entitlements  Hardened Runtime audio-input
 │   └── Assets.xcassets
@@ -39,7 +41,7 @@ local_whisper/
 - `local_whisperApp` is an `LSUIElement` with a Settings scene only. `AppDelegate` owns the menu bar `NSStatusItem`.
 - `AppDelegate` owns a single `AppCoordinator`. Hotkeys register in `applicationDidFinishLaunching` so launch is not blocked.
 - `AppCoordinator` is last-action-wins between encouragement, voice, and screenshot; the timer runs independently; toasts; clipboard; Settings when the key is missing.
-- Views stay thin. Each feature is an `@Observable` type. Screenshot extraction, encouragement, and transcription use the authenticated `BackendClient`. The deferred Responses client remains isolated for future computer-use work and is not used by these shortcuts. Secrets never live in source files.
+- Views stay thin. Each feature is an `@Observable` type. Screenshot extraction, encouragement, and transcription use the authenticated `BackendClient`. Computer use reuses the transcription recorder, then calls authenticated session endpoints; the backend owns OpenAI planning and TypeSafe guardrails, while the Mac owns the fresh headed Playwright browser. Secrets never live in source files.
 
 ---
 
@@ -77,6 +79,8 @@ The bundle ID is `brauliopf.local-whisper`. If signing fails, change it to somet
 
 **Settings…** → paste the backend service token → **Save**. The production backend URL is configured by default. The backend owns provider credentials and model selection.
 
+Computer-use local browser settings are explicit Info.plist values: `COMPUTER_USE_INITIAL_URL`, `COMPUTER_USE_ALLOWED_ORIGINS` (comma-separated exact origins), and optional `COMPUTER_USE_NODE_PATH`. The model cannot expand this allowlist. The Xcode build phase bundles the executor JavaScript; install Playwright Chromium in the executor environment before first use.
+
 ### 4. Command-line build
 
 From the repo root:
@@ -113,6 +117,7 @@ Quit any instance started from Xcode before opening the copy, or you may get two
 |---|---|
 | **⌃⌥W** | **Microphone** |
 | **⌃⌥R** | **Screen Recording** (System Settings → Privacy & Security) |
+| **⌃⌥L** | **Microphone**; the local Playwright/Chromium executor must be installed or bundled by the build phase |
 
 If a shortcut does nothing, confirm `local_whisper` is allowed for that permission, then restart the app.
 

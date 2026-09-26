@@ -11,6 +11,12 @@ import {
   ProviderFailureError,
   ProviderTimeoutError,
 } from "./errors.js";
+import {
+  ComputerApprovalError,
+  ComputerPolicyBlockedError,
+  ComputerSessionNotFoundError,
+} from "./computer-use.js";
+import type { ComputerUseService } from "./computer-use-service.js";
 import type { AppConfig } from "./config.js";
 import { FixedWindowRateLimiter } from "./rate-limit.js";
 import type {
@@ -28,6 +34,7 @@ export interface AppDependencies {
   config: AppConfig;
   provider: BackendProvider;
   transcriptionWorkflow: TranscriptionWorkflow;
+  computerUse?: ComputerUseService;
 }
 
 class ClientDisconnectedError extends Error {
@@ -88,6 +95,15 @@ function toApiError(error: unknown): ApiError {
   if (error instanceof ProviderFailureError) {
     return new ApiError(502, "provider_failure", "The provider could not process the request. Please try again.");
   }
+  if (error instanceof ComputerSessionNotFoundError) {
+    return new ApiError(404, "computer_session_not_found", error.message);
+  }
+  if (error instanceof ComputerApprovalError) {
+    return new ApiError(409, "computer_approval_required", error.message);
+  }
+  if (error instanceof ComputerPolicyBlockedError) {
+    return new ApiError(422, "computer_policy_blocked", error.message);
+  }
   if (hasCode(error, "FST_ERR_CTP_BODY_TOO_LARGE") || hasCode(error, "FST_REQ_FILE_TOO_LARGE")) {
     return new ApiError(413, "file_too_large", "The uploaded file is too large.");
   }
@@ -105,6 +121,13 @@ interface ImageUpload {
 interface AudioUpload {
   data: Buffer;
   mediaType: AudioMediaType;
+}
+
+interface ComputerResultUpload {
+  result: unknown;
+  screenshot: Buffer;
+  currentURL?: string;
+  currentTitle?: string;
 }
 
 async function readImage(request: FastifyRequest, config: AppConfig): Promise<ImageUpload> {
@@ -219,6 +242,101 @@ async function readAudio(request: FastifyRequest, config: AppConfig): Promise<Au
   return { data: audio, mediaType };
 }
 
+async function readComputerResult(
+  request: FastifyRequest,
+  config: AppConfig,
+): Promise<ComputerResultUpload> {
+  if (!request.isMultipart()) {
+    throw new ApiError(400, "invalid_input", "The request must be multipart form data.");
+  }
+  let resultText: string | undefined;
+  let currentURL: string | undefined;
+  let currentTitle: string | undefined;
+  let screenshot: Buffer | undefined;
+  try {
+    for await (const part of request.parts()) {
+      if (part.type === "file") {
+        if (part.fieldname !== "screenshot" || screenshot) {
+          throw new ApiError(400, "invalid_input", "Exactly one screenshot file is required.");
+        }
+        if (part.mimetype !== "image/png") {
+          throw new ApiError(400, "unsupported_file", "The screenshot must be a PNG image.");
+        }
+        const chunks: Buffer[] = [];
+        let size = 0;
+        for await (const chunk of part.file) {
+          const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+          size += buffer.length;
+          if (size > Math.min(config.computerUseMaxScreenshotBytes, 4 * 1024 * 1024)) {
+            throw new ApiError(413, "file_too_large", "The screenshot is too large.");
+          }
+          chunks.push(buffer);
+        }
+        if (part.file.truncated) {
+          throw new ApiError(413, "file_too_large", "The screenshot is too large.");
+        }
+        screenshot = Buffer.concat(chunks);
+      } else if (part.fieldname === "result") {
+        if (resultText !== undefined || typeof part.value !== "string") {
+          throw new ApiError(400, "invalid_input", "The result field may only be sent once.");
+        }
+        resultText = part.value;
+      } else if (part.fieldname === "current_url") {
+        if (typeof part.value !== "string") {
+          throw new ApiError(400, "invalid_input", "current_url must be text.");
+        }
+        currentURL = part.value;
+      } else if (part.fieldname === "current_title") {
+        if (typeof part.value !== "string") {
+          throw new ApiError(400, "invalid_input", "current_title must be text.");
+        }
+        currentTitle = part.value;
+      } else {
+        throw new ApiError(400, "invalid_input", "The request contains an unknown field.");
+      }
+    }
+  } catch (error) {
+    if (error instanceof ApiError) throw error;
+    throw toApiError(error);
+  }
+  if (!screenshot || screenshot.length === 0 || !isPng(screenshot)) {
+    throw new ApiError(400, "unsupported_file", "The uploaded screenshot is not a valid PNG.");
+  }
+  if (resultText === undefined || Buffer.byteLength(resultText, "utf8") > 4 * 1024 * 1024) {
+    throw new ApiError(400, "invalid_input", "The result field is required and must be bounded.");
+  }
+  let result: unknown;
+  try {
+    result = JSON.parse(resultText);
+  } catch {
+    throw new ApiError(400, "invalid_input", "The result field must contain valid JSON.");
+  }
+  return { result, screenshot, currentURL, currentTitle };
+}
+
+function computerSessionPayload(response: Awaited<ReturnType<ComputerUseService["start"]>>): Record<string, unknown> {
+  const step = response.step;
+  return {
+    session_id: response.session.id,
+    status: response.session.status,
+    done: response.done ?? false,
+    message: response.message,
+    step: step
+      ? {
+          id: step.id,
+          code: step.code,
+          code_hash: step.codeHash,
+          browser_state_hash: step.browserStateHash,
+          summary: step.summary,
+          risk: step.risk,
+          status: step.status,
+          approval_expires_at: step.approvalExpiresAt,
+        }
+      : undefined,
+    guardrail_reasons: response.guardrailReasons,
+  };
+}
+
 async function runWithDeadline<T>(
   request: FastifyRequest,
   operation: (signal: AbortSignal) => Promise<T>,
@@ -272,6 +390,7 @@ export async function buildApp({
   config,
   provider,
   transcriptionWorkflow,
+  computerUse,
 }: AppDependencies): Promise<FastifyInstance> {
   const expectedTokenDigest = createHash("sha256").update(config.serviceToken).digest();
   const rateLimiter = new FixedWindowRateLimiter(
@@ -287,10 +406,10 @@ export async function buildApp({
 
   await app.register(multipart, {
     limits: {
-      fields: 0,
+      fields: 4,
       files: 1,
       fileSize: config.requestBodyMaxBytes,
-      parts: 1,
+      parts: 5,
     },
   });
 
@@ -305,7 +424,9 @@ export async function buildApp({
     }
     if (
       request.method === "POST" &&
-      ["/image-text", "/encouragements", "/transcriptions"].includes(request.url.split("?", 1)[0])
+      (["/image-text", "/encouragements", "/transcriptions"].includes(
+        request.url.split("?", 1)[0],
+      ) || request.url.split("?", 1)[0].startsWith("/computer-use/"))
     ) {
       if (!rateLimiter.allow()) {
         const retryAfterSeconds = rateLimiter.retryAfterSeconds();
@@ -324,6 +445,10 @@ export async function buildApp({
     providers: {
       openai: { configured: Boolean(config.openAIAPIKey) },
       typesafe: { configured: Boolean(config.typesafeAPIKey) },
+      computer_use: {
+        configured: Boolean(config.openAIAPIKey && config.typesafeAPIKey),
+        model: config.computerUseModel,
+      },
     },
   }));
 
@@ -406,6 +531,135 @@ export async function buildApp({
       is_translated: result.isTranslated,
       request_id: request.id,
     };
+  });
+
+  app.post("/computer-use/sessions", async (request, reply) => {
+    if (!computerUse) {
+      throw new ProviderFailureError();
+    }
+    const body = request.body;
+    if (typeof body !== "object" || body === null || Array.isArray(body)) {
+      throw new ApiError(400, "invalid_input", "The request body must be a JSON object.");
+    }
+    const value = body as Record<string, unknown>;
+    const instruction = value.instruction;
+    const initialURL = value.initial_url;
+    const allowedOrigins = value.allowed_origins;
+    const currentURL = value.current_url;
+    const currentTitle = value.current_title;
+    if (
+      typeof instruction !== "string" ||
+      typeof initialURL !== "string" ||
+      !Array.isArray(allowedOrigins) ||
+      !allowedOrigins.every((origin) => typeof origin === "string") ||
+      (currentURL !== undefined && typeof currentURL !== "string") ||
+      (currentTitle !== undefined && typeof currentTitle !== "string")
+    ) {
+      throw new ApiError(400, "invalid_input", "instruction, initial_url, and allowed_origins are required.");
+    }
+    try {
+      const url = new URL(initialURL);
+      if (!["http:", "https:"].includes(url.protocol)) throw new Error();
+      if (!allowedOrigins.includes(url.origin) || allowedOrigins.length > 20) throw new Error();
+      for (const origin of allowedOrigins) {
+        const parsedOrigin = new URL(origin);
+        if (!["http:", "https:"].includes(parsedOrigin.protocol) || parsedOrigin.origin !== origin) throw new Error();
+      }
+    } catch {
+      throw new ApiError(400, "invalid_input", "The initial URL and allowed origins must be valid HTTP origins.");
+    }
+    const result = await runWithDeadline(
+      request,
+      (signal) => computerUse.start({ instruction, initialURL, allowedOrigins, currentURL, currentTitle }, signal),
+      config,
+      config.computerUseOverallTimeoutMs,
+      config.computerUseOverallTimeoutMs,
+    );
+    if (result === undefined || reply.raw.destroyed) return;
+    return computerSessionPayload(result);
+  });
+
+  app.post("/computer-use/sessions/:sessionId/steps/:stepId/approve", async (request) => {
+    if (!computerUse) throw new ProviderFailureError();
+    const body = request.body;
+    const codeHash =
+      typeof body === "object" && body !== null && !Array.isArray(body)
+        ? (body as Record<string, unknown>).code_hash
+        : undefined;
+    const browserStateHash =
+      typeof body === "object" && body !== null && !Array.isArray(body)
+        ? (body as Record<string, unknown>).browser_state_hash
+        : undefined;
+    if (typeof codeHash !== "string" || codeHash.length !== 64 || typeof browserStateHash !== "string" || browserStateHash.length !== 64) {
+      throw new ApiError(400, "invalid_input", "code_hash and browser_state_hash are required.");
+    }
+    const params = request.params as { sessionId: string; stepId: string };
+    const result = await runWithDeadline(
+      request,
+      async () => computerUse.approve(params.sessionId, params.stepId, codeHash, browserStateHash),
+      config,
+      config.computerUseOverallTimeoutMs,
+      config.computerUseOverallTimeoutMs,
+    );
+    if (result === undefined) return;
+    return computerSessionPayload(result);
+  });
+
+  app.post("/computer-use/sessions/:sessionId/steps/:stepId/deny", async (request) => {
+    if (!computerUse) throw new ProviderFailureError();
+    const params = request.params as { sessionId: string; stepId: string };
+    const result = await runWithDeadline(
+      request,
+      async () => computerUse.deny(params.sessionId, params.stepId),
+      config,
+      config.computerUseOverallTimeoutMs,
+      config.computerUseOverallTimeoutMs,
+    );
+    if (result === undefined) return;
+    return computerSessionPayload(result);
+  });
+
+  app.post("/computer-use/sessions/:sessionId/steps/:stepId/result", async (request, reply) => {
+    if (!computerUse) throw new ProviderFailureError();
+    const upload = await readComputerResult(request, config);
+    const params = request.params as { sessionId: string; stepId: string };
+    const result = await runWithDeadline(
+      request,
+      (signal) =>
+        computerUse.submitResult(
+          {
+            sessionId: params.sessionId,
+            stepId: params.stepId,
+            result: upload.result,
+            screenshot: upload.screenshot,
+            currentURL: upload.currentURL,
+            currentTitle: upload.currentTitle,
+          },
+          signal,
+        ),
+      config,
+      config.computerUseOverallTimeoutMs,
+      config.computerUseOverallTimeoutMs,
+    );
+    if (result === undefined || reply.raw.destroyed) return;
+    return computerSessionPayload(result);
+  });
+
+  app.delete("/computer-use/sessions/:sessionId", async (request) => {
+    if (!computerUse) throw new ProviderFailureError();
+    const params = request.params as { sessionId: string };
+    const result = await runWithDeadline(
+      request,
+      async () => {
+        await computerUse.cancel(params.sessionId);
+        return { status: "cancelled" };
+      },
+      config,
+      config.computerUseOverallTimeoutMs,
+      config.computerUseOverallTimeoutMs,
+    );
+    if (result === undefined) return;
+    return { ...result, session_id: params.sessionId };
   });
 
   app.setErrorHandler((error, request, reply) => {

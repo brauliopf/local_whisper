@@ -17,10 +17,12 @@ export type ExecutorResult = {
   value: TableValue;
   text: string[];
   artifacts: Array<{ path: string; mimeType: "image/png"; label: string }>;
+  screenshot: { path: string; mimeType: "image/png"; label: string };
   browser: { url: string; title: string };
 } | {
   ok: false;
   error: { kind: "script_error" | "navigation_policy" | "invalid_result"; message: string };
+  screenshot?: { path: string; mimeType: "image/png"; label: string };
   browser: { url: string; title: string };
 };
 
@@ -36,6 +38,7 @@ export type Request = {
 export const maxScriptBytes = 64 * 1024;
 export const maxResultBytes = 4 * 1024 * 1024;
 export const defaultScriptTimeoutMs = 60_000;
+export const maxScreenshots = 20;
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -47,7 +50,16 @@ export function parseConfiguration(value: unknown): BrowserConfiguration {
     typeof value.artifactDirectory !== "string") {
     throw new Error("Invalid browser configuration.");
   }
-  return value as unknown as BrowserConfiguration;
+  return {
+    ...value,
+    scriptTimeoutMs: Math.max(
+      1,
+      Math.min(
+        typeof value.scriptTimeoutMs === "number" ? value.scriptTimeoutMs : defaultScriptTimeoutMs,
+        defaultScriptTimeoutMs,
+      ),
+    ),
+  } as unknown as BrowserConfiguration;
 }
 
 export function originOf(url: string): string {

@@ -8,6 +8,7 @@ final class Hotkeys {
     var onScreenshot: (() -> Void)?
     var onCountdown: (() -> Void)?
     var onSettings: (() -> Void)?
+    var onComputerUse: (() -> Void)?
     var onEscape: (() -> Void)?
 
     private var encouragementHotKeyRef: EventHotKeyRef?
@@ -15,6 +16,7 @@ final class Hotkeys {
     private var screenshotHotKeyRef: EventHotKeyRef?
     private var countdownHotKeyRef: EventHotKeyRef?
     private var settingsHotKeyRef: EventHotKeyRef?
+    private var computerUseHotKeyRef: EventHotKeyRef?
     private var escapeHotKeyRef: EventHotKeyRef?
     private var eventHandler: EventHandlerRef?
 
@@ -24,6 +26,7 @@ final class Hotkeys {
     private static let screenshotID = EventHotKeyID(signature: signature, id: 4)
     private static let countdownID = EventHotKeyID(signature: signature, id: 5)
     private static let settingsID = EventHotKeyID(signature: signature, id: 6)
+    private static let computerUseID = EventHotKeyID(signature: signature, id: 7)
     private static let escapeID = EventHotKeyID(signature: signature, id: 3)
 
     struct Registration {
@@ -32,6 +35,7 @@ final class Hotkeys {
         var screenshot = false
         var countdown = false
         var settings = false
+        var computerUse = false
     }
 
     func start() -> Registration {
@@ -68,6 +72,7 @@ final class Hotkeys {
                     case 4: hotkeys.onScreenshot?()
                     case 5: hotkeys.onCountdown?()
                     case 6: hotkeys.onSettings?()
+                    case 7: hotkeys.onComputerUse?()
                     default: break
                     }
                 }
@@ -122,6 +127,14 @@ final class Hotkeys {
             0,
             &settingsHotKeyRef
         ) == noErr
+        result.computerUse = RegisterEventHotKey(
+            UInt32(kVK_ANSI_L),
+            UInt32(controlKey | optionKey),
+            Self.computerUseID,
+            GetApplicationEventTarget(),
+            0,
+            &computerUseHotKeyRef
+        ) == noErr
         return result
     }
 
@@ -160,6 +173,9 @@ final class Hotkeys {
         if let settingsHotKeyRef {
             UnregisterEventHotKey(settingsHotKeyRef)
         }
+        if let computerUseHotKeyRef {
+            UnregisterEventHotKey(computerUseHotKeyRef)
+        }
         if let eventHandler {
             RemoveEventHandler(eventHandler)
         }
@@ -168,6 +184,7 @@ final class Hotkeys {
         screenshotHotKeyRef = nil
         countdownHotKeyRef = nil
         settingsHotKeyRef = nil
+        computerUseHotKeyRef = nil
         eventHandler = nil
     }
 

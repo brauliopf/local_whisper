@@ -19,4 +19,11 @@ test("loads translation and TypeSafe configuration with backend defaults", () =>
   assert.equal(config.typesafeProviderTimeoutMs, 5_000);
   assert.equal(config.translationProviderTimeoutMs, 25_000);
   assert.equal(config.transcriptMaxChars, 20_000);
+  assert.equal(config.computerUseModel, "gpt-4.1");
+  assert.equal(config.computerUseOverallTimeoutMs, 600_000);
+  assert.equal(config.computerUseTaskDurationMs, 600_000);
+  assert.equal(config.computerUseMaxIterations, 20);
+  assert.equal(config.computerUseMaxRegenerations, 3);
+  assert.equal(config.computerUseMaxScreenshotBytes, 4 * 1024 * 1024);
+  assert.equal(config.computerUseApprovalTimeoutMs, 600_000);
 });

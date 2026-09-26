@@ -30,6 +30,13 @@ const config: AppConfig = {
   typesafeProviderTimeoutMs: 5,
   translationProviderTimeoutMs: 25,
   transcriptMaxChars: 20_000,
+  computerUseModel: "gpt-4.1",
+  computerUseOverallTimeoutMs: 600_000,
+  computerUseTaskDurationMs: 600_000,
+  computerUseMaxIterations: 20,
+  computerUseMaxRegenerations: 3,
+  computerUseMaxScreenshotBytes: 4 * 1024 * 1024,
+  computerUseApprovalTimeoutMs: 600_000,
   rateLimitMax: 10,
   rateLimitWindowMs: 60_000,
 };
@@ -110,6 +117,7 @@ test("status does not require authentication", async () => {
       providers: {
         openai: { configured: true },
         typesafe: { configured: true },
+        computer_use: { configured: true, model: "gpt-4.1" },
       },
     });
     assert.match(String(response.headers["x-request-id"] ?? ""), /^[0-9a-f-]{36}$/);
@@ -130,6 +138,7 @@ test("status reports an optional TypeSafe key as unconfigured", async () => {
     assert.deepEqual(response.json().providers, {
       openai: { configured: true },
       typesafe: { configured: false },
+      computer_use: { configured: false, model: "gpt-4.1" },
     });
   } finally {
     await app.close();
