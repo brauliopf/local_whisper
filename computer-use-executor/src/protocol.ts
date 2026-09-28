@@ -21,7 +21,7 @@ export type ExecutorResult = {
   browser: { url: string; title: string };
 } | {
   ok: false;
-  error: { kind: "script_error" | "navigation_policy" | "invalid_result"; message: string };
+  error: { kind: "script_error" | "capability_error" | "navigation_policy" | "invalid_result"; message: string };
   screenshot?: { path: string; mimeType: "image/png"; label: string };
   browser: { url: string; title: string };
 };
@@ -50,6 +50,10 @@ export function parseConfiguration(value: unknown): BrowserConfiguration {
     typeof value.artifactDirectory !== "string") {
     throw new Error("Invalid browser configuration.");
   }
+  validateHTTPURL(value.initialURL, "initialURL");
+  for (const origin of value.allowedOrigins) {
+    validateOrigin(origin);
+  }
   return {
     ...value,
     scriptTimeoutMs: Math.max(
@@ -68,4 +72,32 @@ export function originOf(url: string): string {
 
 export function isAllowedOrigin(url: string, allowedOrigins: string[]): boolean {
   return allowedOrigins.includes(originOf(url));
+}
+
+function validateHTTPURL(value: string, field: string): void {
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    throw new Error(`Invalid ${field}.`);
+  }
+  if (!isHTTPProtocol(parsed.protocol) || parsed.username || parsed.password) {
+    throw new Error(`Invalid ${field}.`);
+  }
+}
+
+function validateOrigin(value: string): void {
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    throw new Error("Invalid allowed origin.");
+  }
+  if (!isHTTPProtocol(parsed.protocol) || parsed.username || parsed.password || parsed.origin !== value) {
+    throw new Error("Allowed origins must be exact HTTP(S) origins.");
+  }
+}
+
+function isHTTPProtocol(protocol: string): boolean {
+  return protocol === "http:" || protocol === "https:";
 }

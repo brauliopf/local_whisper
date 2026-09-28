@@ -1,8 +1,15 @@
-import { mkdir } from "node:fs/promises";
+import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import vm from "node:vm";
 import { chromium, type Browser, type BrowserContext, type Page } from "playwright";
-import { createPageCapability } from "./capability.js";
+import {
+  CapabilityError,
+  createPageCapability,
+  protectCapabilityFunction,
+  type PageCapability,
+  type ScreenshotArtifact,
+  type ScreenshotCapability,
+} from "./capability.js";
 import {
   defaultScriptTimeoutMs,
   isAllowedOrigin,
@@ -28,6 +35,7 @@ export class BrowserExecutor {
   private screenshotNumber = 0;
   private policyError?: string;
   private extraPageError?: string;
+  private readonly artifactPaths = new Set<string>();
 
   async start(rawConfiguration: unknown): Promise<SessionInfo> {
     if (this.browser) throw new Error("Browser session is already running.");
@@ -79,7 +87,7 @@ export class BrowserExecutor {
     }
 
     const artifacts: Array<{ path: string; mimeType: "image/png"; label: string }> = [];
-    const screenshot = async (label: string) => {
+    const captureScreenshot = async (label: string) => {
       if (this.screenshotNumber >= maxScreenshots || artifacts.length >= maxScreenshots - 1) {
         throw new Error("The screenshot limit was exceeded.");
       }
@@ -90,8 +98,13 @@ export class BrowserExecutor {
       await page.screenshot({ path });
       const artifact = { path, mimeType: "image/png" as const, label };
       artifacts.push(artifact);
+      this.artifactPaths.add(path);
       return artifact;
     };
+    const screenshot: ScreenshotCapability = protectCapabilityFunction(async (label: string): Promise<ScreenshotArtifact> => {
+      const artifact = await captureScreenshot(label);
+      return { id: `screenshot-${this.screenshotNumber}`, mimeType: artifact.mimeType, label: artifact.label };
+    });
 
     const run = this.runModule(moduleCode, page, screenshot);
     let timeout: ReturnType<typeof setTimeout> | undefined;
@@ -104,7 +117,7 @@ export class BrowserExecutor {
       if (this.extraPageError) throw new NavigationPolicyError(this.extraPageError);
       if (Buffer.byteLength(JSON.stringify(value)) > maxResultBytes) throw new InvalidResultError("Script result exceeds the 4 MiB limit.");
       const table = normalizeTable(value);
-      const freshScreenshot = await screenshot("step");
+      const freshScreenshot = await captureScreenshot("step");
       return { ok: true, value: table, text: [], artifacts, screenshot: freshScreenshot, browser: await this.sessionInfo() };
     } catch (error) {
       if (error instanceof Error && error.message === "Script timed out.") {
@@ -116,7 +129,7 @@ export class BrowserExecutor {
       if (this.policyError || this.extraPageError || error instanceof NavigationPolicyError || capabilityNavigationError) {
         const browser = await this.sessionInfo();
         const message = this.policyError ?? this.extraPageError ?? (error as Error).message;
-        const freshScreenshot = await screenshot("step-error").catch(() => undefined);
+        const freshScreenshot = await captureScreenshot("step-error").catch(() => undefined);
         await this.stop();
         return { ok: false, error: { kind: "navigation_policy", message }, screenshot: freshScreenshot, browser };
       }
@@ -124,11 +137,19 @@ export class BrowserExecutor {
         return {
           ok: false,
           error: { kind: "invalid_result", message: error.message },
-          screenshot: await screenshot("step-error").catch(() => undefined),
+          screenshot: await captureScreenshot("step-error").catch(() => undefined),
           browser: await this.sessionInfo(),
         };
       }
-      return this.scriptError(error instanceof Error ? error.message : String(error), await this.sessionInfo(), screenshot);
+      if (error instanceof CapabilityError) {
+        return {
+          ok: false,
+          error: { kind: "capability_error", message: error.message },
+          screenshot: await captureScreenshot("step-error").catch(() => undefined),
+          browser: await this.sessionInfo(),
+        };
+      }
+      return this.scriptError(error instanceof Error ? error.message : String(error), await this.sessionInfo(), captureScreenshot);
     } finally {
       if (timeout) clearTimeout(timeout);
     }
@@ -137,6 +158,8 @@ export class BrowserExecutor {
   async stop(): Promise<void> {
     await this.context?.close().catch(() => undefined);
     await this.browser?.close().catch(() => undefined);
+    await Promise.all([...this.artifactPaths].map(path => rm(path, { force: true }).catch(() => undefined)));
+    this.artifactPaths.clear();
     this.page = undefined;
     this.context = undefined;
     this.browser = undefined;
@@ -148,9 +171,9 @@ export class BrowserExecutor {
   private async runModule(
     moduleCode: string,
     page: Page,
-    screenshot: (label: string) => Promise<{ path: string; mimeType: "image/png"; label: string }>,
+    screenshot: ScreenshotCapability,
   ) {
-    const capabilityPage = createPageCapability(page, this.configuration?.allowedOrigins ?? []);
+    const capabilityPage: PageCapability = createPageCapability(page, this.configuration?.allowedOrigins ?? []);
     const sandbox = vm.createContext({ page: capabilityPage, screenshot });
     const script = new vm.Script(`(async () => {
       const module = { exports: {} };
