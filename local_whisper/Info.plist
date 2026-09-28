@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIdentifier</key>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>$(PRODUCT_NAME)</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>$(MARKETING_VERSION)</string>
+	<key>CFBundleVersion</key>
+	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>BACKEND_BASE_URL</key>
+	<string>https://local-whisper-api-24n67dikla-uw.a.run.app</string>
+	<key>COMPUTER_USE_ALLOWED_ORIGINS</key>
+	<string>https://en.wikipedia.org,https://www.wikipedia.org,https://www.google.com</string>
+	<key>COMPUTER_USE_INITIAL_URL</key>
+	<string>https://en.wikipedia.org/wiki/Main_Page</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>$(MACOSX_DEPLOYMENT_TARGET)</string>
+	<key>LSUIElement</key>
+	<true/>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>local_whisper records your voice so it can transcribe it.</string>
+	<key>NSScreenCaptureUsageDescription</key>
+	<string>local_whisper captures a screenshot so it can copy text from the image.</string>
+</dict>
+</plist>

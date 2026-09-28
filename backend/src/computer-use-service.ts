@@ -83,7 +83,12 @@ export class ComputerUseService {
         status: "completed",
         responseId: planned.responseId,
       });
-      return { session: { ...session, status: "completed", responseId: planned.responseId }, done: true, message: planned.message };
+      return {
+        session: { ...session, status: "completed", responseId: planned.responseId },
+        done: true,
+        message: planned.message,
+        guardrailReasons: planned.guardrailReasons,
+      };
     }
     return this.persistPlan(session, planned.plan, planned.risk, planned.reasons, input.currentURL, input.currentTitle);
   }
@@ -181,6 +186,7 @@ export class ComputerUseService {
         session: { ...session, status: "completed", responseId: planned.responseId },
         done: true,
         message: planned.message,
+        guardrailReasons: planned.guardrailReasons,
       };
     }
     return this.persistPlan(
@@ -206,7 +212,7 @@ export class ComputerUseService {
     currentURL?: string,
     currentTitle?: string,
   ): Promise<
-    | { done: true; message: string; responseId: string }
+    | { done: true; message: string; responseId: string; guardrailReasons?: string[] }
     | { plan: ComputerCodePlan & { responseId: string }; risk: ComputerRisk; reasons: string[] }
   > {
     let candidate = initial;
@@ -232,13 +238,17 @@ export class ComputerUseService {
       await this.options.repository.updateSession(session.id, {
         regenerationCount: session.regenerationCount + 1,
       });
-      candidate = await this.options.planner.continue(
+      const regenerated = await this.options.planner.continue(
         candidate.responseId,
         candidate.callId,
         { guardrail: "prohibited", reasons: evaluation.reasons },
         Buffer.alloc(0),
         signal,
       );
+      if ("done" in regenerated) {
+        return { ...regenerated, guardrailReasons: evaluation.reasons };
+      }
+      candidate = regenerated;
     }
     throw new ComputerPolicyBlockedError();
   }

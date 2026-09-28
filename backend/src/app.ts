@@ -277,10 +277,18 @@ async function readComputerResult(
         }
         screenshot = Buffer.concat(chunks);
       } else if (part.fieldname === "result") {
-        if (resultText !== undefined || typeof part.value !== "string") {
+        if (resultText !== undefined) {
           throw new ApiError(400, "invalid_input", "The result field may only be sent once.");
         }
-        resultText = part.value;
+        if (typeof part.value === "string") {
+          resultText = part.value;
+        } else {
+          try {
+            resultText = JSON.stringify(part.value);
+          } catch {
+            throw new ApiError(400, "invalid_input", "The result field must contain valid JSON.");
+          }
+        }
       } else if (part.fieldname === "current_url") {
         if (typeof part.value !== "string") {
           throw new ApiError(400, "invalid_input", "current_url must be text.");
@@ -665,7 +673,14 @@ export async function buildApp({
   app.setErrorHandler((error, request, reply) => {
     const apiError = toApiError(error);
     request.log.error(
-      { requestId: request.id, code: apiError.code, statusCode: apiError.statusCode },
+      {
+        requestId: request.id,
+        code: apiError.code,
+        statusCode: apiError.statusCode,
+        errorName: error instanceof Error ? error.name : undefined,
+        errorMessage: error instanceof Error ? error.message : String(error),
+        errorStack: error instanceof Error ? error.stack : undefined,
+      },
       "request_failed",
     );
     if (reply.sent || reply.raw.destroyed) {

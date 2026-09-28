@@ -43,7 +43,9 @@ const computerGuardrail = classifier
       },
     };
 const computerUse = new ComputerUseService({
-  repository: new FirestoreComputerSessionRepository(new Firestore()),
+  repository: new FirestoreComputerSessionRepository(
+    new Firestore({ ignoreUndefinedProperties: true }),
+  ),
   planner: new OpenAIComputerPlanner(openAI, config.computerUseModel),
   guardrail: computerGuardrail,
   maxIterations: Math.min(config.computerUseMaxIterations, 20),
