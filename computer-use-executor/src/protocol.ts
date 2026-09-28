@@ -17,10 +17,12 @@ export type ExecutorResult = {
   value: TableValue;
   text: string[];
   artifacts: Array<{ path: string; mimeType: "image/png"; label: string }>;
+  screenshot: { path: string; mimeType: "image/png"; label: string };
   browser: { url: string; title: string };
 } | {
   ok: false;
-  error: { kind: "script_error" | "navigation_policy" | "invalid_result"; message: string };
+  error: { kind: "script_error" | "capability_error" | "navigation_policy" | "invalid_result"; message: string };
+  screenshot?: { path: string; mimeType: "image/png"; label: string };
   browser: { url: string; title: string };
 };
 
@@ -36,6 +38,7 @@ export type Request = {
 export const maxScriptBytes = 64 * 1024;
 export const maxResultBytes = 4 * 1024 * 1024;
 export const defaultScriptTimeoutMs = 60_000;
+export const maxScreenshots = 20;
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -47,7 +50,20 @@ export function parseConfiguration(value: unknown): BrowserConfiguration {
     typeof value.artifactDirectory !== "string") {
     throw new Error("Invalid browser configuration.");
   }
-  return value as unknown as BrowserConfiguration;
+  validateHTTPURL(value.initialURL, "initialURL");
+  for (const origin of value.allowedOrigins) {
+    validateOrigin(origin);
+  }
+  return {
+    ...value,
+    scriptTimeoutMs: Math.max(
+      1,
+      Math.min(
+        typeof value.scriptTimeoutMs === "number" ? value.scriptTimeoutMs : defaultScriptTimeoutMs,
+        defaultScriptTimeoutMs,
+      ),
+    ),
+  } as unknown as BrowserConfiguration;
 }
 
 export function originOf(url: string): string {
@@ -56,4 +72,32 @@ export function originOf(url: string): string {
 
 export function isAllowedOrigin(url: string, allowedOrigins: string[]): boolean {
   return allowedOrigins.includes(originOf(url));
+}
+
+function validateHTTPURL(value: string, field: string): void {
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    throw new Error(`Invalid ${field}.`);
+  }
+  if (!isHTTPProtocol(parsed.protocol) || parsed.username || parsed.password) {
+    throw new Error(`Invalid ${field}.`);
+  }
+}
+
+function validateOrigin(value: string): void {
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    throw new Error("Invalid allowed origin.");
+  }
+  if (!isHTTPProtocol(parsed.protocol) || parsed.username || parsed.password || parsed.origin !== value) {
+    throw new Error("Allowed origins must be exact HTTP(S) origins.");
+  }
+}
+
+function isHTTPProtocol(protocol: string): boolean {
+  return protocol === "http:" || protocol === "https:";
 }

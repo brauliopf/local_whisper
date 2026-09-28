@@ -1,6 +1,6 @@
-# Computer-use executor (Milestone 0A)
+# Computer-use executor
 
-Standalone headless Playwright executor. It does not call OpenAI and has no Swift dependency.
+Standalone headed Playwright executor. It does not call OpenAI and has no Swift dependency. The backend is responsible for planning and guardrail evaluation; this process only executes an already-approved module.
 
 ## Setup
 
@@ -23,7 +23,7 @@ Start a session:
 Execute a module:
 
 ```json
-{"jsonrpc":"2.0","id":2,"method":"script.execute","params":{"module":"module.exports = async ({ page, context, screenshot }) => ({ type: 'table', columns: ['Title'], rows: [[await page.title()]], notes: [] });"}}
+{"jsonrpc":"2.0","id":2,"method":"script.execute","params":{"module":"module.exports = async ({ page, screenshot }) => ({ type: 'table', columns: ['Title'], rows: [[await page.title()]], notes: [] });"}}
 ```
 
 Stop the session:
@@ -32,6 +32,6 @@ Stop the session:
 {"jsonrpc":"2.0","id":3,"method":"session.stop","params":{}}
 ```
 
-Each task has one headless Chromium browser, one fresh context, and one page. Sequential scripts reuse the same page. Same-origin path changes are allowed; new pages and navigation to another origin are rejected.
+Each task has one visible Chromium browser, one fresh context, and one page. Sequential scripts reuse the same page. Same-origin path changes are allowed; new pages and navigation to another origin are rejected. Every execution returns a fresh temporary PNG screenshot. The Swift adapter consumes and deletes screenshot/artifact files after upload.
 
-Generated modules are treated as trusted local code in this milestone. The `vm` context is not an OS security sandbox.
+Generated modules receive only `{ page, screenshot }`. The executor does not expose a raw Playwright `Page`, `Browser`, or `BrowserContext`. Instead, `page` is an explicit allowlist wrapper exposing only bounded navigation, observation, locator lookup, locator interaction, and waiting methods. `screenshot` is a host-owned helper that returns opaque metadata; generated code cannot choose filesystem paths or screenshot options. Cookies, storage, request clients, event hooks, frames, workers, script evaluation, lifecycle controls, and host APIs are not exposed. The `vm` context remains defense-in-depth rather than an OS security sandbox; backend AST scanning and TypeSafe evaluation are mandatory before execution.
