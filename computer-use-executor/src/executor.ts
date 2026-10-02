@@ -1,4 +1,4 @@
-import { mkdir } from "node:fs/promises";
+import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import vm from "node:vm";
 import { chromium, type Browser, type BrowserContext, type Page } from "playwright";
@@ -36,7 +36,7 @@ export class BrowserExecutor {
 
     this.configuration = configuration;
     try {
-      this.browser = await chromium.launch({ headless: true });
+      this.browser = await chromium.launch({ headless: false });
       this.context = await this.browser.newContext({ viewport: { width: 1440, height: 900 } });
       this.context.setDefaultTimeout(10_000);
       this.context.setDefaultNavigationTimeout(15_000);
@@ -98,7 +98,8 @@ export class BrowserExecutor {
       if (this.extraPageError) throw new NavigationPolicyError(this.extraPageError);
       if (Buffer.byteLength(JSON.stringify(value)) > maxResultBytes) throw new InvalidResultError("Script result exceeds the 4 MiB limit.");
       const table = normalizeTable(value);
-      return { ok: true, value: table, text: [], artifacts, browser: await this.sessionInfo() };
+      const automaticScreenshot = await screenshot("step");
+      return { ok: true, value: table, text: [], artifacts, screenshot: automaticScreenshot, browser: await this.sessionInfo() };
     } catch (error) {
       if (error instanceof Error && error.message === "Script timed out.") {
         await this.stop();
@@ -118,8 +119,10 @@ export class BrowserExecutor {
   }
 
   async stop(): Promise<void> {
+    const artifactDirectory = this.configuration?.artifactDirectory;
     await this.context?.close().catch(() => undefined);
     await this.browser?.close().catch(() => undefined);
+    if (artifactDirectory) await rm(artifactDirectory, { recursive: true, force: true }).catch(() => undefined);
     this.page = undefined;
     this.context = undefined;
     this.browser = undefined;

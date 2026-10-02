@@ -12,9 +12,11 @@ final class VoiceTranscription {
     private let recorder = AudioRecorder()
     private var transcribeTask: Task<Void, Never>?
     private var maxDurationTask: Task<Void, Never>?
-    private var isRecording = false
+    private(set) var isRecording = false
+    private(set) var isComputerUseRecording = false
     private var isTranscribing = false
     private var isStartingRecording = false
+    private var computerUseResult: ((Result<String, Error>) -> Void)?
 
     private static let minimumRecordingDuration: TimeInterval = 0.5
 
@@ -31,6 +33,8 @@ final class VoiceTranscription {
     func cancelInFlightWork() {
         transcribeTask?.cancel()
         isTranscribing = false
+        computerUseResult = nil
+        isComputerUseRecording = false
     }
 
     func toggle() {
@@ -42,6 +46,14 @@ final class VoiceTranscription {
         startRecording()
     }
 
+    func toggleForComputerUse(onResult: @escaping (Result<String, Error>) -> Void) {
+        if !isRecording {
+            computerUseResult = onResult
+            isComputerUseRecording = true
+        }
+        toggle()
+    }
+
     func cancelRecording(showToast: Bool = true) {
         guard isRecording else { return }
         isRecording = false
@@ -49,6 +61,8 @@ final class VoiceTranscription {
         maxDurationTask?.cancel()
         maxDurationTask = nil
         recorder.cancel()
+        computerUseResult = nil
+        isComputerUseRecording = false
         if showToast {
             toast.show(message: "Recording cancelled", isError: false)
         }
@@ -81,7 +95,7 @@ final class VoiceTranscription {
             isRecording = true
             setEscapeEnabled?(true)
             toast.show(
-                message: "Recording… press ⌃⌥W to stop",
+                message: isComputerUseRecording ? "Recording… press ⌃⌥A to stop" : "Recording… press ⌃⌥W to stop",
                 isError: false,
                 autoDismiss: false
             )
@@ -135,14 +149,32 @@ final class VoiceTranscription {
                     )
                     guard !Task.isCancelled else { return }
                     guard !text.isEmpty else {
-                        toast.show(message: "No speech detected.", isError: false)
+                        if let computerUseResult {
+                            self.computerUseResult = nil
+                            self.isComputerUseRecording = false
+                            computerUseResult(.success(""))
+                        } else {
+                            toast.show(message: "No speech detected.", isError: false)
+                        }
                         return
                     }
-                    Clipboard.copy(text)
-                    toast.show(message: "Copied to clipboard", isError: false)
+                    if let computerUseResult {
+                        self.computerUseResult = nil
+                        self.isComputerUseRecording = false
+                        computerUseResult(.success(text))
+                    } else {
+                        Clipboard.copy(text)
+                        toast.show(message: "Copied to clipboard", isError: false)
+                    }
                 } catch {
                     guard !Task.isCancelled else { return }
-                    toast.show(message: error.localizedDescription, isError: true)
+                    if let computerUseResult {
+                        self.computerUseResult = nil
+                        self.isComputerUseRecording = false
+                        computerUseResult(.failure(error))
+                    } else {
+                        toast.show(message: error.localizedDescription, isError: true)
+                    }
                     throw error
                 }
             }

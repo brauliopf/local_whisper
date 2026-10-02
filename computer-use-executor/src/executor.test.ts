@@ -1,10 +1,18 @@
 import assert from "node:assert/strict";
-import { mkdtemp } from "node:fs/promises";
+import { access, mkdtemp } from "node:fs/promises";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { BrowserExecutor } from "./executor.js";
+import { isAllowedOrigin } from "./protocol.js";
+
+test("wildcard policy permits HTTP(S) origins but rejects other schemes", () => {
+  assert.equal(isAllowedOrigin("https://example.com/path", ["*"]), true);
+  assert.equal(isAllowedOrigin("http://example.com/path", ["*"]), true);
+  assert.equal(isAllowedOrigin("file:///tmp/page.html", ["*"]), false);
+  assert.equal(isAllowedOrigin("javascript:alert(1)", ["*"]), false);
+});
 
 test("runs sequential modules in one page and returns generic tables", async () => {
   const server = createServer((_, response) => {
@@ -15,13 +23,14 @@ test("runs sequential modules in one page and returns generic tables", async () 
   const address = server.address();
   assert.ok(address && typeof address !== "string");
   const origin = `http://127.0.0.1:${address.port}`;
+  const artifactDirectory = await mkdtemp(join(tmpdir(), "local-whisper-executor-"));
   const executor = new BrowserExecutor();
 
   try {
     const session = await executor.start({
       initialURL: `${origin}/flights`,
       allowedOrigins: [origin],
-      artifactDirectory: await mkdtemp(join(tmpdir(), "local-whisper-executor-")),
+      artifactDirectory,
     });
     assert.equal(session.url, `${origin}/flights`);
 
@@ -32,7 +41,11 @@ test("runs sequential modules in one page and returns generic tables", async () 
       notes: []
     });`);
     assert.equal(first.ok, true);
-    if (first.ok) assert.deepEqual(first.value.rows, [["Fixture flights", "0"]]);
+    if (first.ok) {
+      assert.deepEqual(first.value.rows, [["Fixture flights", "0"]]);
+      await access(first.screenshot.path);
+      assert.equal(first.screenshot.path.startsWith(artifactDirectory), true);
+    }
 
     const failed = await executor.execute(`module.exports = async () => { throw new Error("recoverable"); };`);
     assert.equal(failed.ok, false);
@@ -55,6 +68,7 @@ test("runs sequential modules in one page and returns generic tables", async () 
     if (!blocked.ok) assert.equal(blocked.error.kind, "navigation_policy");
   } finally {
     await executor.stop();
+    await assert.rejects(() => access(artifactDirectory));
     await new Promise<void>(resolve => server.close(() => resolve()));
   }
 });

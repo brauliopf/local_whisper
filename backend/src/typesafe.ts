@@ -11,11 +11,26 @@ export interface LanguageJudgment {
   usage?: Record<string, number>;
 }
 
+export type RiskClassification = "safe" | "needs_user_approval" | "prohibited";
+
 export interface LanguageClassifier {
   judgeMajorityEnglish(
     transcript: string,
     signal: AbortSignal,
   ): Promise<LanguageJudgment>;
+}
+
+export interface LanguageRiskClassifier {
+  evaluateComputerCode(
+    state: {
+      instruction: string;
+      code: string;
+      summary: string;
+      currentURL: string;
+      currentTitle: string;
+    },
+    signal: AbortSignal,
+  ): Promise<{ risk: RiskClassification; reasons: string[] }>;
 }
 
 interface TypeSafeLanguageClassifierOptions {
@@ -62,7 +77,7 @@ const responseJudgment = (
   };
 };
 
-export class TypeSafeLanguageClassifier implements LanguageClassifier {
+export class TypeSafeLanguageClassifier implements LanguageClassifier, LanguageRiskClassifier {
   private readonly fetchImpl: typeof fetch;
 
   constructor(
@@ -123,6 +138,85 @@ export class TypeSafeLanguageClassifier implements LanguageClassifier {
       throw new ProviderFailureError();
     }
     return responseJudgment(body, this.model);
+  }
+
+  async evaluateComputerCode(
+    state: {
+      instruction: string;
+      code: string;
+      summary: string;
+      currentURL: string;
+      currentTitle: string;
+    },
+    signal: AbortSignal,
+  ): Promise<{ risk: RiskClassification; reasons: string[] }> {
+    let response: Response;
+    try {
+      response = await this.fetchImpl(typeSafeEndpoint, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${this.apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          state,
+          model: this.model,
+          questions: {
+            computer_risk: {
+              type: "choice",
+              instructions:
+                "Classify the generated Playwright JavaScript according to the user's instruction, current browser state, and the permanent safety policy.",
+              criteria: {
+                safe:
+                  "The code performs reversible browser interaction or read-only work without sensitive data, external side effects, downloads, uploads, submissions, purchases, deletion, account changes, host access, credential access, or policy bypass.",
+                needs_user_approval:
+                  "The code performs a consequential browser action such as submitting, sending, purchasing, deleting, changing account state, entering sensitive data, uploading, downloading, or navigating to another allowed origin, but does not access the host or credentials.",
+                prohibited:
+                  "The code accesses or attempts to access files, processes, shells, environment variables, Keychain, cookies, browser storage, arbitrary network clients, host services, credentials, dynamic code-generation escapes, or guardrail bypasses.",
+              },
+            },
+          },
+        }),
+        signal,
+      });
+    } catch (error) {
+      if (error instanceof Error && error.name === "AbortError") {
+        throw error;
+      }
+      throw new ProviderFailureError();
+    }
+
+    if (response.status === 401) {
+      throw new ProviderAuthenticationError();
+    }
+    if (!response.ok) {
+      throw new ProviderFailureError();
+    }
+
+    let body: unknown;
+    try {
+      body = await response.json();
+    } catch {
+      throw new ProviderFailureError();
+    }
+    if (!isRecord(body) || !isRecord(body.answers)) {
+      throw new ProviderFailureError();
+    }
+    const answer = body.answers.computer_risk;
+    if (!isRecord(answer) || answer.type !== "choice" || typeof answer.choice !== "string") {
+      throw new ProviderFailureError();
+    }
+    if (
+      answer.choice !== "safe" &&
+      answer.choice !== "needs_user_approval" &&
+      answer.choice !== "prohibited"
+    ) {
+      throw new ProviderFailureError();
+    }
+    return {
+      risk: answer.choice,
+      reasons: [answer.choice],
+    };
   }
 }
 

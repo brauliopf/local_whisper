@@ -81,6 +81,34 @@ Success:
 
 The workflow skips Jev and translation for empty transcription output. Client cancellation and request deadlines abort the workflow rather than starting fallback translation.
 
+### Agentic browser use
+
+The authenticated computer-use API accepts a natural-language instruction and returns one planner-generated browser step at a time:
+
+```http
+POST /computer-use/sessions
+Authorization: Bearer <service-token>
+Content-Type: application/json
+
+{
+  "instruction": "Visit Wikipedia and search for Braulio",
+  "initial_url": "https://en.wikipedia.org/wiki/Main_Page",
+  "allowed_origins": ["*"],
+  "current_url": "https://en.wikipedia.org/wiki/Main_Page",
+  "current_title": "Wikipedia"
+}
+```
+
+The Mac client executes each returned step in a visible Chromium browser, captures a PNG screenshot, and submits the screenshot and bounded JSON result to:
+
+```http
+POST /computer-use/sessions/<session_id>/steps/<step_id>/result
+Authorization: Bearer <service-token>
+Content-Type: multipart/form-data
+```
+
+Steps classified as requiring approval must be approved or denied through the corresponding `/approve` or `/deny` endpoint. A task can be cancelled with `DELETE /computer-use/sessions/<session_id>`. The wildcard policy permits valid HTTP(S) origins; non-HTTP(S) schemes and executor capability escapes remain blocked. Screenshots are transient and are removed when the local browser session stops.
+
 ## Local development
 
 Copy `.env.example` to `.env` and provide an OpenAI key and service token. Add `TYPESAFE_API_KEY` when Jev classification is enabled; leaving it blank intentionally enables translation-only fallback. `.env` is ignored by Git.

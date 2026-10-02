@@ -1,6 +1,6 @@
 # local_whisper
 
-A macOS **menu bar** app (no Dock icon) that stays out of the way and does four things from global shortcuts:
+A macOS **menu bar** app (no Dock icon) that stays out of the way and provides utility and agentic browser actions from global shortcuts:
 
 | Shortcut | Action |
 |---|---|
@@ -8,6 +8,7 @@ A macOS **menu bar** app (no Dock icon) that stays out of the way and does four 
 | **⌃⌥W** | Record audio (tap again to stop, Escape to cancel), transcribe and translate through the backend, copy text to the clipboard |
 | **⌃⌥R** | System screenshot picker (drag a region; **Space** for a window; **Escape** to cancel), extract text through the backend, copy to the clipboard |
 | **⌃⌥T** | Start a timer (default 20 minutes; length configurable in Settings). Remaining time shows next to the menu bar icon. Pressing again while running does nothing. |
+| **⌃⌥A** | Record a spoken browser instruction (press again to stop, Escape to cancel), transcribe it, and execute it in a visible headed browser. |
 
 The backend service token is entered in **Settings** and stored in the **macOS Keychain**. Voice input may be multilingual; the backend transcribes the source language, uses TypeSafe Jev to determine whether translation is needed, and returns English when translation is required. Provider credentials and model choices are owned by the backend; the Mac no longer needs an OpenAI API key.
 
@@ -38,8 +39,8 @@ local_whisper/
 
 - `local_whisperApp` is an `LSUIElement` with a Settings scene only. `AppDelegate` owns the menu bar `NSStatusItem`.
 - `AppDelegate` owns a single `AppCoordinator`. Hotkeys register in `applicationDidFinishLaunching` so launch is not blocked.
-- `AppCoordinator` is last-action-wins between encouragement, voice, and screenshot; the timer runs independently; toasts; clipboard; Settings when the key is missing.
-- Views stay thin. Each feature is an `@Observable` type. Screenshot extraction, encouragement, and transcription use the authenticated `BackendClient`. The deferred Responses client remains isolated for future computer-use work and is not used by these shortcuts. Secrets never live in source files.
+- `AppCoordinator` is last-action-wins between encouragement, voice, screenshot, and computer-use recording; the timer runs independently; toasts; clipboard; Settings when the key is missing.
+- Views stay thin. Each feature is an `@Observable` type. Screenshot extraction, encouragement, and transcription use the authenticated `BackendClient`. Computer-use instructions use the authenticated backend planner and the bundled headed browser executor. The Responses client remains available as a lower-level adapter, and secrets never live in source files.
 
 ---
 

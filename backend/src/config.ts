@@ -18,6 +18,13 @@ export interface AppConfig {
   typesafeProviderTimeoutMs: number;
   translationProviderTimeoutMs: number;
   transcriptMaxChars: number;
+  computerUseModel: string;
+  computerUseOverallTimeoutMs: number;
+  computerUseTaskDurationMs: number;
+  computerUseMaxIterations: number;
+  computerUseMaxRegenerations: number;
+  computerUseMaxScreenshotBytes: number;
+  computerUseApprovalTimeoutMs: number;
   rateLimitMax: number;
   rateLimitWindowMs: number;
 }
@@ -84,6 +91,33 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
       25_000,
     ),
     transcriptMaxChars: positiveInteger(env, "TRANSCRIPT_MAX_CHARS", 20_000),
+    computerUseModel: env.COMPUTER_USE_MODEL?.trim() || "gpt-4.1",
+    computerUseOverallTimeoutMs: positiveInteger(
+      env,
+      "COMPUTER_USE_OVERALL_TIMEOUT_MS",
+      10 * 60 * 1000,
+    ),
+    computerUseTaskDurationMs: positiveInteger(
+      env,
+      "COMPUTER_USE_TASK_DURATION_MS",
+      10 * 60 * 1000,
+    ),
+    computerUseMaxIterations: positiveInteger(env, "COMPUTER_USE_MAX_ITERATIONS", 20),
+    computerUseMaxRegenerations: positiveInteger(
+      env,
+      "COMPUTER_USE_MAX_REGENERATIONS",
+      3,
+    ),
+    computerUseMaxScreenshotBytes: positiveInteger(
+      env,
+      "COMPUTER_USE_MAX_SCREENSHOT_BYTES",
+      4 * 1024 * 1024,
+    ),
+    computerUseApprovalTimeoutMs: positiveInteger(
+      env,
+      "COMPUTER_USE_APPROVAL_TIMEOUT_MS",
+      10 * 60 * 1000,
+    ),
     rateLimitMax: positiveInteger(env, "RATE_LIMIT_MAX", 10),
     rateLimitWindowMs: positiveInteger(env, "RATE_LIMIT_WINDOW_MS", 60_000),
   };

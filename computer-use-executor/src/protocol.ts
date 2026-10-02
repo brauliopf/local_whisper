@@ -17,6 +17,7 @@ export type ExecutorResult = {
   value: TableValue;
   text: string[];
   artifacts: Array<{ path: string; mimeType: "image/png"; label: string }>;
+  screenshot: { path: string; mimeType: "image/png"; label: string };
   browser: { url: string; title: string };
 } | {
   ok: false;
@@ -55,5 +56,11 @@ export function originOf(url: string): string {
 }
 
 export function isAllowedOrigin(url: string, allowedOrigins: string[]): boolean {
-  return allowedOrigins.includes(originOf(url));
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return false;
+    return allowedOrigins.includes("*") || allowedOrigins.includes(parsed.origin);
+  } catch {
+    return false;
+  }
 }
