@@ -91,6 +91,7 @@
 				77F9243D303F9D5000338A78 /* Sources */,
 				77F9243E303F9D5000338A78 /* Frameworks */,
 				77F9243F303F9D5000338A78 /* Resources */,
+				77F924500000000000000001 /* Bundle computer-use executor */,
 			);
 			buildRules = (
 			);
@@ -161,6 +162,27 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		77F924500000000000000001 /* Bundle computer-use executor */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+				"$(SRCROOT)/computer-use-executor/package.json",
+				"$(SRCROOT)/computer-use-executor/src/index.ts",
+			);
+			name = "Bundle computer-use executor";
+			outputPaths = (
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/computer-use-executor/index.js",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			sandboxEnabled = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -e\ncd \"$SRCROOT/computer-use-executor\"\nnpm run build >/dev/null\nresources=\"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/computer-use-executor\"\nrm -rf \"$resources\"\nmkdir -p \"$resources\"\ncp dist/executor.js dist/index.js dist/protocol.js package.json \"$resources/\"\nmkdir -p \"$resources/node_modules\"\ncp -R node_modules/playwright node_modules/playwright-core \"$resources/node_modules/\"\n";
+		};
+/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		8A1C7D0B0000000000000005 /* Sources */ = {
@@ -236,7 +258,7 @@
 				DEVELOPMENT_TEAM = BRRZC7CQ24;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
-				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GCC_C_LANGUAGE_STANDARD = gnu17;
 				GCC_DYNAMIC_NO_PIC = NO;
 				GCC_NO_COMMON_BLOCKS = YES;
@@ -300,7 +322,7 @@
 				DEVELOPMENT_TEAM = BRRZC7CQ24;
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
-				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GCC_C_LANGUAGE_STANDARD = gnu17;
 				GCC_NO_COMMON_BLOCKS = YES;
 				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
@@ -331,7 +353,8 @@
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
-				GENERATE_INFOPLIST_FILE = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = local_whisper/Info.plist;
 				INFOPLIST_KEY_LSUIElement = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "local_whisper records your voice so it can transcribe it.";
@@ -349,7 +372,6 @@
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				INFOPLIST_KEY_BACKEND_BASE_URL = "https://local-whisper-api-24n67dikla-uw.a.run.app";
 				SWIFT_VERSION = 5.0;
 			};
 			name = Debug;
@@ -367,7 +389,8 @@
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
-				GENERATE_INFOPLIST_FILE = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = local_whisper/Info.plist;
 				INFOPLIST_KEY_LSUIElement = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "local_whisper records your voice so it can transcribe it.";
@@ -385,7 +408,6 @@
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				INFOPLIST_KEY_BACKEND_BASE_URL = "https://local-whisper-api-24n67dikla-uw.a.run.app";
 				SWIFT_VERSION = 5.0;
 			};
 			name = Release;

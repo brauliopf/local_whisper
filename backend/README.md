@@ -81,6 +81,26 @@ Success:
 
 The workflow skips Jev and translation for empty transcription output. Client cancellation and request deadlines abort the workflow rather than starting fallback translation.
 
+### Agentic browser use
+
+The authenticated computer-use API accepts a natural-language instruction and returns one planner-generated browser step at a time. The Mac client executes each step in a visible browser, captures a PNG screenshot, and submits the bounded result and screenshot to the result endpoint. Steps classified as requiring approval pause until the user approves or denies them.
+
+The local browser profile is owned by the Mac app and is never uploaded to this service. Website passwords, cookies, and browser storage are not included in planner requests or result payloads. The client may send `allowed_origins: ["*"]` to permit valid HTTP(S) origins; non-HTTP(S) schemes remain rejected.
+
+```http
+POST /computer-use/sessions
+Authorization: Bearer <service-token>
+Content-Type: application/json
+
+{
+  "instruction": "Visit Wikipedia and search for Braulio",
+  "initial_url": "https://en.wikipedia.org/wiki/Main_Page",
+  "allowed_origins": ["*"],
+  "current_url": "https://en.wikipedia.org/wiki/Main_Page",
+  "current_title": "Wikipedia"
+}
+```
+
 ## Local development
 
 Copy `.env.example` to `.env` and provide an OpenAI key and service token. Add `TYPESAFE_API_KEY` when Jev classification is enabled; leaving it blank intentionally enables translation-only fallback. `.env` is ignored by Git.

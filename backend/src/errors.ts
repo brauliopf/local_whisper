@@ -7,6 +7,9 @@ export type ApiErrorCode =
   | "provider_timeout"
   | "provider_authentication"
   | "provider_failure"
+  | "computer_session_not_found"
+  | "computer_approval_required"
+  | "computer_policy_blocked"
   | "internal_error";
 
 export class ApiError extends Error {

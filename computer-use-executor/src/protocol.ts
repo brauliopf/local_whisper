@@ -2,6 +2,7 @@ export type BrowserConfiguration = {
   initialURL: string;
   allowedOrigins: string[];
   artifactDirectory: string;
+  profileDirectory: string;
   scriptTimeoutMs?: number;
 };
 
@@ -17,6 +18,7 @@ export type ExecutorResult = {
   value: TableValue;
   text: string[];
   artifacts: Array<{ path: string; mimeType: "image/png"; label: string }>;
+  screenshot: { path: string; mimeType: "image/png"; label: string };
   browser: { url: string; title: string };
 } | {
   ok: false;
@@ -29,7 +31,7 @@ export type SessionInfo = { url: string; title: string };
 export type Request = {
   jsonrpc: "2.0";
   id: number;
-  method: "session.start" | "script.execute" | "session.stop";
+  method: "session.start" | "script.execute" | "session.stop" | "profile.clear";
   params?: Record<string, unknown>;
 };
 
@@ -44,7 +46,7 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
 export function parseConfiguration(value: unknown): BrowserConfiguration {
   if (!isRecord(value) || typeof value.initialURL !== "string" ||
     !Array.isArray(value.allowedOrigins) || value.allowedOrigins.some(item => typeof item !== "string") ||
-    typeof value.artifactDirectory !== "string") {
+    typeof value.artifactDirectory !== "string" || typeof value.profileDirectory !== "string") {
     throw new Error("Invalid browser configuration.");
   }
   return value as unknown as BrowserConfiguration;
@@ -55,5 +57,11 @@ export function originOf(url: string): string {
 }
 
 export function isAllowedOrigin(url: string, allowedOrigins: string[]): boolean {
-  return allowedOrigins.includes(originOf(url));
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return false;
+    return allowedOrigins.includes("*") || allowedOrigins.includes(parsed.origin);
+  } catch {
+    return false;
+  }
 }

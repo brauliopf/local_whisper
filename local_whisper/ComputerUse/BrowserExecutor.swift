@@ -5,6 +5,7 @@ nonisolated struct BrowserConfiguration: Codable, Sendable, Equatable {
     var initialURL: URL
     var allowedOrigins: [String]
     var artifactDirectory: URL
+    var profileDirectory: URL
 }
 
 nonisolated struct BrowserTableResult: Codable, Sendable, Equatable {
@@ -19,6 +20,8 @@ nonisolated struct BrowserArtifact: Codable, Sendable, Equatable {
     var mimeType: String
     var label: String
 }
+
+typealias BrowserScreenshot = BrowserArtifact
 
 nonisolated struct BrowserState: Codable, Sendable, Equatable {
     var url: String
@@ -35,6 +38,7 @@ nonisolated struct BrowserExecutorResult: Codable, Sendable, Equatable {
     var value: BrowserTableResult?
     var text: [String]?
     var artifacts: [BrowserArtifact]?
+    var screenshot: BrowserScreenshot?
     var browser: BrowserState
     var error: BrowserResultError?
 }
@@ -76,7 +80,9 @@ nonisolated enum BrowserExecutorError: LocalizedError, Sendable {
 nonisolated protocol BrowserExecuting: Sendable {
     func start(configuration: BrowserConfiguration) async throws -> BrowserSessionInfo
     func execute(module: String) async throws -> BrowserExecutorResult
+    func consumeScreenshot(from result: BrowserExecutorResult) throws -> Data
     func stop() async
+    func clearProfile() async throws
 }
 
 actor NodeBrowserExecutor: BrowserExecuting {
@@ -146,6 +152,7 @@ actor NodeBrowserExecutor: BrowserExecuting {
                     "initialURL": configuration.initialURL.absoluteString,
                     "allowedOrigins": configuration.allowedOrigins,
                     "artifactDirectory": configuration.artifactDirectory.path,
+                    "profileDirectory": configuration.profileDirectory.path,
                 ],
                 timeout: 30
             )
@@ -170,6 +177,30 @@ actor NodeBrowserExecutor: BrowserExecuting {
             }
             throw error
         }
+    }
+
+    nonisolated func consumeScreenshot(from result: BrowserExecutorResult) throws -> Data {
+        guard let screenshot = result.screenshot else {
+            throw BrowserExecutorError.protocolError("The executor did not return a screenshot.")
+        }
+        let url = URL(fileURLWithPath: screenshot.path)
+        let data: Data
+        do {
+            data = try Data(contentsOf: url)
+        } catch {
+            throw BrowserExecutorError.protocolError("The screenshot could not be read.")
+        }
+        guard data.count <= 4 * 1024 * 1024,
+              data.starts(with: [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]) else {
+            throw BrowserExecutorError.protocolError("The executor returned an invalid screenshot.")
+        }
+        return data
+    }
+
+    func clearProfile() async throws {
+        let response = try await send(method: "profile.clear", params: [:], timeout: 5)
+        try decodeEmpty(response)
+        cleanup()
     }
 
     func stop() async {
@@ -233,6 +264,15 @@ actor NodeBrowserExecutor: BrowserExecuting {
             }
         } onCancel: {
             Task { await self.completePending(with: .failure(BrowserExecutorError.cancelled)) }
+        }
+    }
+
+    private func decodeEmpty(_ response: WireResponse) throws {
+        if let error = response.error {
+            throw BrowserExecutorError.protocolError(error)
+        }
+        guard response.result != nil else {
+            throw BrowserExecutorError.protocolError("Response did not contain a result.")
         }
     }
 

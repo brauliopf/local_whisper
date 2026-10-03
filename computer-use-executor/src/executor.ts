@@ -1,7 +1,7 @@
-import { mkdir } from "node:fs/promises";
+import { access, mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import vm from "node:vm";
-import { chromium, type Browser, type BrowserContext, type Page } from "playwright";
+import { chromium, type BrowserContext, type Page } from "playwright";
 import {
   defaultScriptTimeoutMs,
   isAllowedOrigin,
@@ -19,7 +19,6 @@ class InvalidResultError extends Error {}
 class NavigationPolicyError extends Error {}
 
 export class BrowserExecutor {
-  private browser?: Browser;
   private context?: BrowserContext;
   private page?: Page;
   private configuration?: BrowserConfiguration;
@@ -28,7 +27,7 @@ export class BrowserExecutor {
   private extraPageError?: string;
 
   async start(rawConfiguration: unknown): Promise<SessionInfo> {
-    if (this.browser) throw new Error("Browser session is already running.");
+    if (this.context) throw new Error("Browser session is already running.");
     const configuration = parseConfiguration(rawConfiguration);
     if (!isAllowedOrigin(configuration.initialURL, configuration.allowedOrigins)) {
       throw new NavigationPolicyError("Initial URL is outside the allowed origins.");
@@ -36,8 +35,14 @@ export class BrowserExecutor {
 
     this.configuration = configuration;
     try {
-      this.browser = await chromium.launch({ headless: true });
-      this.context = await this.browser.newContext({ viewport: { width: 1440, height: 900 } });
+      await mkdir(configuration.profileDirectory, { recursive: true });
+      const storageStatePath = join(configuration.profileDirectory, "storage-state.json");
+      const hasStorageState = await access(storageStatePath).then(() => true).catch(() => false);
+      this.context = await chromium.launchPersistentContext(configuration.profileDirectory, {
+        headless: false,
+        viewport: { width: 1440, height: 900 },
+        ...(hasStorageState ? { storageState: storageStatePath } : {}),
+      });
       this.context.setDefaultTimeout(10_000);
       this.context.setDefaultNavigationTimeout(15_000);
       this.context.on("page", page => {
@@ -46,17 +51,19 @@ export class BrowserExecutor {
           void page.close().catch(() => undefined);
         }
       });
-      await this.context.route("**/*", async route => {
-        const request = route.request();
-        if (request.resourceType() === "document" && !isAllowedOrigin(request.url(), configuration.allowedOrigins)) {
-          this.policyError = `Navigation outside the allowed origins: ${originOf(request.url())}`;
-          await route.abort("blockedbyclient");
-          return;
-        }
-        await route.continue();
-      });
+      await this.context.cookies();
+      const existingPages = this.context.pages();
+      for (const page of existingPages) await page.close().catch(() => undefined);
       this.page = await this.context.newPage();
+      this.page.on("framenavigated", frame => {
+        if (frame !== this.page?.mainFrame() || frame.url() === "about:blank") return;
+        if (!isAllowedOrigin(frame.url(), configuration.allowedOrigins)) {
+          this.policyError = `Navigation outside the allowed origins: ${originOf(frame.url())}`;
+          void this.page?.goto("about:blank").catch(() => undefined);
+        }
+      });
       await this.page.goto(configuration.initialURL, { waitUntil: "domcontentloaded" });
+      if (hasStorageState) await this.page.reload({ waitUntil: "domcontentloaded" });
       return this.sessionInfo();
     } catch (error) {
       await this.stop();
@@ -98,7 +105,8 @@ export class BrowserExecutor {
       if (this.extraPageError) throw new NavigationPolicyError(this.extraPageError);
       if (Buffer.byteLength(JSON.stringify(value)) > maxResultBytes) throw new InvalidResultError("Script result exceeds the 4 MiB limit.");
       const table = normalizeTable(value);
-      return { ok: true, value: table, text: [], artifacts, browser: await this.sessionInfo() };
+      const automaticScreenshot = await screenshot("step");
+      return { ok: true, value: table, text: [], artifacts, screenshot: automaticScreenshot, browser: await this.sessionInfo() };
     } catch (error) {
       if (error instanceof Error && error.message === "Script timed out.") {
         await this.stop();
@@ -118,14 +126,24 @@ export class BrowserExecutor {
   }
 
   async stop(): Promise<void> {
+    const configuration = this.configuration;
+    if (configuration && this.context) {
+      await mkdir(configuration.profileDirectory, { recursive: true });
+      await this.context.storageState({ path: join(configuration.profileDirectory, "storage-state.json") }).catch(() => undefined);
+    }
     await this.context?.close().catch(() => undefined);
-    await this.browser?.close().catch(() => undefined);
+    if (configuration) await rm(configuration.artifactDirectory, { recursive: true, force: true }).catch(() => undefined);
     this.page = undefined;
     this.context = undefined;
-    this.browser = undefined;
     this.configuration = undefined;
     this.policyError = undefined;
     this.extraPageError = undefined;
+  }
+
+  async clearProfile(): Promise<void> {
+    const profileDirectory = this.configuration?.profileDirectory;
+    await this.stop();
+    if (profileDirectory) await rm(profileDirectory, { recursive: true, force: true }).catch(() => undefined);
   }
 
   private async runModule(

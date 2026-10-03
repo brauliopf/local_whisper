@@ -7,7 +7,8 @@ final class BrowserExecutorTests: XCTestCase {
         let configuration = BrowserConfiguration(
             initialURL: URL(string: "https://www.google.com/travel/flights")!,
             allowedOrigins: ["https://www.google.com"],
-            artifactDirectory: URL(fileURLWithPath: "/tmp/browser-artifacts")
+            artifactDirectory: URL(fileURLWithPath: "/tmp/browser-artifacts"),
+            profileDirectory: URL(fileURLWithPath: "/tmp/browser-profile")
         )
 
         let decoded = try JSONDecoder().decode(
@@ -41,7 +42,9 @@ final class BrowserExecutorTests: XCTestCase {
             initialURL: fixture,
             allowedOrigins: ["null"],
             artifactDirectory: FileManager.default.temporaryDirectory
-                .appendingPathComponent("browser-adapter-\(UUID().uuidString)")
+                .appendingPathComponent("browser-adapter-\(UUID().uuidString)"),
+            profileDirectory: FileManager.default.temporaryDirectory
+                .appendingPathComponent("browser-profile-\(UUID().uuidString)")
         )
 
         do {

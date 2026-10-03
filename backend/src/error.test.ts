@@ -26,6 +26,13 @@ const config: AppConfig = {
   typesafeProviderTimeoutMs: 5,
   translationProviderTimeoutMs: 25,
   transcriptMaxChars: 20_000,
+  computerUseModel: "gpt-4.1",
+  computerUseOverallTimeoutMs: 60_000,
+  computerUseTaskDurationMs: 60_000,
+  computerUseMaxIterations: 3,
+  computerUseMaxRegenerations: 1,
+  computerUseMaxScreenshotBytes: 4 * 1024 * 1024,
+  computerUseApprovalTimeoutMs: 10_000,
   rateLimitMax: 10,
   rateLimitWindowMs: 60_000,
 };

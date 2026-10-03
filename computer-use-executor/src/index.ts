@@ -19,7 +19,7 @@ function errorResponse(id: number | null, message: string, code = -32000) {
 
 function parseRequest(value: unknown): Request {
   if (!isRecord(value) || value.jsonrpc !== "2.0" || typeof value.id !== "number" ||
-    typeof value.method !== "string" || !["session.start", "script.execute", "session.stop"].includes(value.method)) {
+    typeof value.method !== "string" || !["session.start", "script.execute", "session.stop", "profile.clear"].includes(value.method)) {
     throw new Error("Invalid JSON-RPC request.");
   }
   return value as unknown as Request;
@@ -39,6 +39,11 @@ async function handle(request: Request) {
       case "session.stop":
         await executor.stop();
         write({ jsonrpc: "2.0", id: request.id, result: { stopped: true } });
+        setImmediate(() => process.exit(0));
+        return;
+      case "profile.clear":
+        await executor.clearProfile();
+        write({ jsonrpc: "2.0", id: request.id, result: { cleared: true } });
         setImmediate(() => process.exit(0));
         return;
     }
