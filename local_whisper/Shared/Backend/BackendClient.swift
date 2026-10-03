@@ -162,14 +162,26 @@ actor BackendClient: BackendClienting {
         var request = makeRequest(path: "computer-use/sessions", serviceToken: serviceToken)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try JSONSerialization.data(withJSONObject: [
+        let body: [String: Any] = [
             "instruction": instruction,
             "initial_url": initialURL.absoluteString,
             "allowed_origins": allowedOrigins,
             "current_url": currentURL,
             "current_title": currentTitle,
-        ])
-        return try await send(request)
+        ]
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        do {
+            return try await send(request)
+        } catch BackendError.apiError(let code, let message)
+                    where code == "invalid_input" && message.localizedCaseInsensitiveContains("allowed origins") {
+            // Older deployed backends reject the wildcard origin used by the new client.
+            // Retry with the origins currently visible to the browser so read-only tasks
+            // remain usable until the backend is redeployed.
+            var compatibilityBody = body
+            compatibilityBody["allowed_origins"] = Self.compatibilityOrigins(initialURL: initialURL, currentURL: currentURL)
+            request.httpBody = try JSONSerialization.data(withJSONObject: compatibilityBody)
+            return try await send(request)
+        }
     }
 
     func approveComputerUseStep(sessionID: String, stepID: String, codeHash: String, browserStateHash: String, serviceToken: String) async throws -> ComputerUseResponse {
@@ -273,6 +285,19 @@ actor BackendClient: BackendClienting {
         }
         body.append(Data("--\(boundary)--\r\n".utf8))
         return body
+    }
+
+    private static func compatibilityOrigins(initialURL: URL, currentURL: String) -> [String] {
+        var origins: [String] = []
+        for value in [initialURL.absoluteString, currentURL] {
+            guard let url = URL(string: value),
+                  let scheme = url.scheme?.lowercased(),
+                  scheme == "http" || scheme == "https",
+                  let host = url.host else { continue }
+            let origin = "\(scheme)://\(host)\(url.port.map { ":\($0)" } ?? "")"
+            if !origins.contains(origin) { origins.append(origin) }
+        }
+        return origins
     }
 
     private static func networkMessage(for error: Error) -> String {
