@@ -39,7 +39,7 @@ local_whisper/
 - `local_whisperApp` is an `LSUIElement` with a Settings scene only. `AppDelegate` owns the menu bar `NSStatusItem`.
 - `AppDelegate` owns a single `AppCoordinator`. Hotkeys register in `applicationDidFinishLaunching` so launch is not blocked.
 - `AppCoordinator` is last-action-wins between encouragement, voice, and screenshot; the timer runs independently; toasts; clipboard; Settings when the key is missing.
-- Views stay thin. Each feature is an `@Observable` type. Screenshot extraction, encouragement, and transcription use the authenticated `BackendClient`. The deferred Responses client remains isolated for future computer-use work and is not used by these shortcuts. Secrets never live in source files.
+- Views stay thin. Each feature is an `@Observable` type. Screenshot extraction, encouragement, and transcription use the authenticated `BackendClient`. Secrets never live in source files.
 
 ---
 
