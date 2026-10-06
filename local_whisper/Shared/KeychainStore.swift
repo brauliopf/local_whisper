@@ -1,6 +1,12 @@
 import Foundation
 import Security
 
+nonisolated protocol Keychaining: Sendable {
+    var hasServiceToken: Bool { get }
+    func loadServiceToken() -> String?
+    @discardableResult func saveServiceToken(_ token: String) -> Bool
+}
+
 struct KeychainStore: Keychaining, Sendable {
     private let service = "brauliopf.local-whisper"
     private let serviceTokenAccount = "backend-service-token"
