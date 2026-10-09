@@ -11,6 +11,7 @@ mkdir -p "$out_dir"
 cd "$agent_dir"
 npm ci
 npm run build
+export PLAYWRIGHT_BROWSERS_PATH="$out_dir/ms-playwright"
 npx playwright install chromium
 
 cp -R dist package.json package-lock.json node_modules "$out_dir/"
