@@ -5,7 +5,8 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "start": "node dist/main.js",
-    "test": "npm run build && node --test dist/*.test.js"
+    "test": "npm run build && node --test dist/*.test.js",
+    "package": "bash ../scripts/package_browser_agent.sh"
   },
   "dependencies": {
     "playwright": "^1.52.0"
