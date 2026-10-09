@@ -38,7 +38,11 @@ final class AppCoordinator {
         self.browser = BrowserAgentCoordinator(backend: backend, keychain: keychain, toast: toast)
 
         voice.onTranscribedForBrowser = { [weak self] text in
-            guard let self, self.browser.isActive else { return false }
+            guard let self else { return true }
+            guard self.browser.isActive else {
+                self.toast.show(message: "Start Browser before using ⌃⌥A.", isError: true)
+                return true
+            }
             await self.browser.submitVoiceCommand(text)
             return true
         }
@@ -50,6 +54,9 @@ final class AppCoordinator {
         }
         hotkeys.onTranscribe = { [weak self] in
             self?.toggleTranscription()
+        }
+        hotkeys.onBrowser = { [weak self] in
+            self?.toggleBrowserCommand()
         }
         hotkeys.onScreenshot = { [weak self] in
             self?.readScreenshot()
@@ -79,6 +86,12 @@ final class AppCoordinator {
         if !registration.transcribe {
             toast.show(
                 message: "Couldn't register ⌃⌥W — another app may already use that shortcut.",
+                isError: true
+            )
+        }
+        if !registration.browser {
+            toast.show(
+                message: "Couldn't register ⌃⌥A — another app may already use that shortcut.",
                 isError: true
             )
         }
@@ -113,6 +126,12 @@ final class AppCoordinator {
         screenshot.cancel()
         encouragement.cancel()
         voice.toggle()
+    }
+
+    func toggleBrowserCommand() {
+        screenshot.cancel()
+        encouragement.cancel()
+        voice.toggleBrowser()
     }
 
     func readScreenshot() {

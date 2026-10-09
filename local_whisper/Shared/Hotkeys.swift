@@ -5,6 +5,7 @@ import Carbon
 final class Hotkeys {
     var onEncouragement: (() -> Void)?
     var onTranscribe: (() -> Void)?
+    var onBrowser: (() -> Void)?
     var onScreenshot: (() -> Void)?
     var onCountdown: (() -> Void)?
     var onSettings: (() -> Void)?
@@ -12,6 +13,7 @@ final class Hotkeys {
 
     private var encouragementHotKeyRef: EventHotKeyRef?
     private var transcribeHotKeyRef: EventHotKeyRef?
+    private var browserHotKeyRef: EventHotKeyRef?
     private var screenshotHotKeyRef: EventHotKeyRef?
     private var countdownHotKeyRef: EventHotKeyRef?
     private var settingsHotKeyRef: EventHotKeyRef?
@@ -21,6 +23,7 @@ final class Hotkeys {
     private static let signature: OSType = 0x4C574850 // 'LWHP'
     private static let encouragementID = EventHotKeyID(signature: signature, id: 1)
     private static let transcribeID = EventHotKeyID(signature: signature, id: 2)
+    private static let browserID = EventHotKeyID(signature: signature, id: 7)
     private static let screenshotID = EventHotKeyID(signature: signature, id: 4)
     private static let countdownID = EventHotKeyID(signature: signature, id: 5)
     private static let settingsID = EventHotKeyID(signature: signature, id: 6)
@@ -29,6 +32,7 @@ final class Hotkeys {
     struct Registration {
         var encouragement = false
         var transcribe = false
+        var browser = false
         var screenshot = false
         var countdown = false
         var settings = false
@@ -65,6 +69,7 @@ final class Hotkeys {
                     case 1: hotkeys.onEncouragement?()
                     case 2: hotkeys.onTranscribe?()
                     case 3: hotkeys.onEscape?()
+                    case 7: hotkeys.onBrowser?()
                     case 4: hotkeys.onScreenshot?()
                     case 5: hotkeys.onCountdown?()
                     case 6: hotkeys.onSettings?()
@@ -97,6 +102,14 @@ final class Hotkeys {
             GetApplicationEventTarget(),
             0,
             &transcribeHotKeyRef
+        ) == noErr
+        result.browser = RegisterEventHotKey(
+            UInt32(kVK_ANSI_A),
+            UInt32(controlKey | optionKey),
+            Self.browserID,
+            GetApplicationEventTarget(),
+            0,
+            &browserHotKeyRef
         ) == noErr
         result.screenshot = RegisterEventHotKey(
             UInt32(kVK_ANSI_R),
@@ -151,6 +164,9 @@ final class Hotkeys {
         if let transcribeHotKeyRef {
             UnregisterEventHotKey(transcribeHotKeyRef)
         }
+        if let browserHotKeyRef {
+            UnregisterEventHotKey(browserHotKeyRef)
+        }
         if let screenshotHotKeyRef {
             UnregisterEventHotKey(screenshotHotKeyRef)
         }
@@ -165,6 +181,7 @@ final class Hotkeys {
         }
         encouragementHotKeyRef = nil
         transcribeHotKeyRef = nil
+        browserHotKeyRef = nil
         screenshotHotKeyRef = nil
         countdownHotKeyRef = nil
         settingsHotKeyRef = nil
