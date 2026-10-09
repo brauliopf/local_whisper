@@ -5,6 +5,8 @@ import Foundation
 final class VoiceTranscription {
     var openSettings: (() -> Void)?
     var setEscapeEnabled: ((Bool) -> Void)?
+    var canStartRecording: (() -> Bool)?
+    var onTranscribedForBrowser: ((String) async -> Bool)?
 
     private let backend: any BackendClienting
     private let keychain: any Keychaining
@@ -12,9 +14,15 @@ final class VoiceTranscription {
     private let recorder = AudioRecorder()
     private var transcribeTask: Task<Void, Never>?
     private var maxDurationTask: Task<Void, Never>?
+    private enum RecordingMode {
+        case clipboard
+        case browser
+    }
+
     private var isRecording = false
     private var isTranscribing = false
     private var isStartingRecording = false
+    private var recordingMode: RecordingMode = .clipboard
 
     private static let minimumRecordingDuration: TimeInterval = 0.5
 
@@ -34,12 +42,20 @@ final class VoiceTranscription {
     }
 
     func toggle() {
+        toggle(mode: .clipboard)
+    }
+
+    func toggleBrowser() {
+        toggle(mode: .browser)
+    }
+
+    private func toggle(mode: RecordingMode) {
         if isRecording {
             finishAndTranscribe()
             return
         }
         if isTranscribing || isStartingRecording { return }
-        startRecording()
+        startRecording(mode: mode)
     }
 
     func cancelRecording(showToast: Bool = true) {
@@ -54,7 +70,8 @@ final class VoiceTranscription {
         }
     }
 
-    private func startRecording() {
+    private func startRecording(mode: RecordingMode) {
+        guard canStartRecording?() ?? true else { return }
         guard keychain.hasServiceToken else {
             openSettings?()
             return
@@ -79,6 +96,7 @@ final class VoiceTranscription {
             }
 
             isRecording = true
+            recordingMode = mode
             setEscapeEnabled?(true)
             toast.show(
                 message: "Recording… press ⌃⌥W to stop",
@@ -136,6 +154,11 @@ final class VoiceTranscription {
                     guard !Task.isCancelled else { return }
                     guard !text.isEmpty else {
                         toast.show(message: "No speech detected.", isError: false)
+                        return
+                    }
+                    if recordingMode == .browser,
+                       let onTranscribedForBrowser,
+                       await onTranscribedForBrowser(text) {
                         return
                     }
                     Clipboard.copy(text)

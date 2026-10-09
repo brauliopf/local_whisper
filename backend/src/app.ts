@@ -19,6 +19,7 @@ import type {
   ImageMediaType,
 } from "./provider.js";
 import type { TranscriptionWorkflow } from "./transcription.js";
+import type { BrowserPlanner } from "./browser-planner.js";
 
 const jpegHeader = Buffer.from([0xff, 0xd8, 0xff]);
 const pngHeader = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
@@ -28,6 +29,7 @@ export interface AppDependencies {
   config: AppConfig;
   provider: BackendProvider;
   transcriptionWorkflow: TranscriptionWorkflow;
+  browserPlanner?: BrowserPlanner;
 }
 
 class ClientDisconnectedError extends Error {
@@ -272,6 +274,7 @@ export async function buildApp({
   config,
   provider,
   transcriptionWorkflow,
+  browserPlanner,
 }: AppDependencies): Promise<FastifyInstance> {
   const expectedTokenDigest = createHash("sha256").update(config.serviceToken).digest();
   const rateLimiter = new FixedWindowRateLimiter(
@@ -305,7 +308,7 @@ export async function buildApp({
     }
     if (
       request.method === "POST" &&
-      ["/image-text", "/encouragements", "/transcriptions"].includes(request.url.split("?", 1)[0])
+      ["/image-text", "/encouragements", "/transcriptions", "/browser-plan"].includes(request.url.split("?", 1)[0])
     ) {
       if (!rateLimiter.allow()) {
         const retryAfterSeconds = rateLimiter.retryAfterSeconds();
@@ -360,6 +363,36 @@ export async function buildApp({
       return;
     }
     return { text, request_id: request.id };
+  });
+
+  app.post("/browser-plan", async (request, reply) => {
+    if (!browserPlanner) {
+      throw new ApiError(404, "invalid_input", "Browser planning is not configured.");
+    }
+    const body = request.body;
+    if (
+      typeof body !== "object" ||
+      body === null ||
+      Array.isArray(body) ||
+      typeof (body as Record<string, unknown>).command !== "string" ||
+      typeof (body as Record<string, unknown>).page !== "object" ||
+      (body as Record<string, unknown>).page === null
+    ) {
+      throw new ApiError(400, "invalid_input", "The browser planning request is invalid.");
+    }
+    const page = (body as Record<string, unknown>).page as Record<string, unknown>;
+    const title = typeof page.title === "string" ? page.title : "";
+    const text = typeof page.text === "string" ? page.text : "";
+    if (text.length > 20_000 || title.length > 1_000) {
+      throw new ApiError(413, "file_too_large", "The browser planning context is too large.");
+    }
+    const result = await runWithDeadline(
+      request,
+      (signal) => browserPlanner.plan((body as Record<string, unknown>).command as string, { title, text }, signal),
+      config,
+    );
+    if (result === undefined || reply.raw.destroyed) return;
+    return { action: result, request_id: request.id };
   });
 
   app.post("/transcriptions", async (request, reply) => {

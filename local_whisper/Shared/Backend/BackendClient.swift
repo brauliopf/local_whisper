@@ -30,9 +30,39 @@ nonisolated struct BackendImageTextResponse: Decodable, Sendable {
     }
 }
 
+nonisolated struct BrowserPageContext: Encodable, Sendable {
+    let title: String
+    let text: String
+}
+
+nonisolated struct BrowserPlanAction: Decodable, Sendable {
+    let type: String
+    let target: String?
+    let direction: String?
+    let milliseconds: Int?
+    let requiresConfirmation: Bool
+    let summary: String?
+
+    enum CodingKeys: String, CodingKey {
+        case type, target, direction, milliseconds, summary
+        case requiresConfirmation
+    }
+}
+
+nonisolated struct BrowserPlanResponse: Decodable, Sendable {
+    let action: BrowserPlanAction
+    let requestID: String
+
+    enum CodingKeys: String, CodingKey {
+        case action
+        case requestID = "request_id"
+    }
+}
+
 nonisolated protocol BackendClienting: Sendable {
     func extractText(fromJPEG data: Data, serviceToken: String) async throws -> String?
     func fetchEncouragement(serviceToken: String) async throws -> String
+    func planBrowser(command: String, page: BrowserPageContext, serviceToken: String) async throws -> BrowserPlanResponse
     func transcribeAudio(at fileURL: URL, serviceToken: String) async throws -> String
 }
 
@@ -92,6 +122,18 @@ actor BackendClient: BackendClienting {
         let response: BackendImageTextResponse = try await send(request)
         guard let text = response.text, !text.isEmpty else { throw BackendError.invalidResponse }
         return text
+    }
+
+    func planBrowser(command: String, page: BrowserPageContext, serviceToken: String) async throws -> BrowserPlanResponse {
+        guard !serviceToken.isEmpty else { throw BackendError.missingServiceToken }
+        var request = makeRequest(path: "browser-plan", serviceToken: serviceToken)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: [
+            "command": command,
+            "page": ["title": page.title, "text": page.text],
+        ])
+        return try await send(request)
     }
 
     func transcribeAudio(at fileURL: URL, serviceToken: String) async throws -> String {

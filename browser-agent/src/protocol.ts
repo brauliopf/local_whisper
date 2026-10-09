@@ -4,7 +4,14 @@ export type BrowserRequest =
   | { id: string; type: "navigate"; url: string }
   | { id: string; type: "inspect" }
   | { id: string; type: "screenshot"; scope?: "viewport" | "full_page" }
+  | { id: string; type: "execute"; action: BrowserAction }
   | { id: string; type: "shutdown" };
+
+export type BrowserAction =
+  | { type: "click"; target: string }
+  | { type: "scroll"; direction: "up" | "down" }
+  | { type: "read"; target?: string }
+  | { type: "wait"; milliseconds: number };
 
 export type BrowserResponse =
   | { id: string; type: "ready" }

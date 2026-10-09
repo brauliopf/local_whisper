@@ -65,7 +65,7 @@ final class StatusItem: NSObject {
 
         let browserActive: Bool
         switch browserState {
-        case .starting, .idle:
+        case .starting, .idle, .planning, .awaitingConfirmation, .authenticationPaused, .executing:
             browserActive = true
         case .stopped, .failed:
             browserActive = false
@@ -74,6 +74,7 @@ final class StatusItem: NSObject {
         let menu = NSMenu()
         menu.addItem(menuItem("Show Encouragement", key: "e", action: #selector(showEncouragement)))
         menu.addItem(menuItem("Transcribe", key: "w", action: #selector(transcribe)))
+        menu.addItem(menuItem("Browser command", key: "a", action: #selector(browserCommand)))
         menu.addItem(menuItem("Read screenshot", key: "r", action: #selector(readScreenshot)))
         menu.addItem(menuItem(
             browserActive ? "Stop Browser" : "Start Browser",
@@ -115,6 +116,10 @@ final class StatusItem: NSObject {
 
     @objc private func transcribe() {
         coordinator.toggleTranscription()
+    }
+
+    @objc private func browserCommand() {
+        coordinator.toggleBrowserCommand()
     }
 
     @objc private func readScreenshot() {
