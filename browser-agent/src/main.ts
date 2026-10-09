@@ -32,6 +32,9 @@ async function handle(request: BrowserRequest): Promise<void> {
       case "screenshot":
         send({ id: request.id, type: "result", result: { path: await session.screenshot(request.scope) } });
         return;
+      case "execute":
+        send({ id: request.id, type: "result", result: await session.execute(request.action) });
+        return;
       case "shutdown":
         await session.stop();
         send({ id: request.id, type: "state", state: "stopped" });

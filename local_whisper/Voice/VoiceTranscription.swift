@@ -5,6 +5,7 @@ import Foundation
 final class VoiceTranscription {
     var openSettings: (() -> Void)?
     var setEscapeEnabled: ((Bool) -> Void)?
+    var onTranscribedForBrowser: ((String) async -> Bool)?
 
     private let backend: any BackendClienting
     private let keychain: any Keychaining
@@ -136,6 +137,9 @@ final class VoiceTranscription {
                     guard !Task.isCancelled else { return }
                     guard !text.isEmpty else {
                         toast.show(message: "No speech detected.", isError: false)
+                        return
+                    }
+                    if let onTranscribedForBrowser, await onTranscribedForBrowser(text) {
                         return
                     }
                     Clipboard.copy(text)

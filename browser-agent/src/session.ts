@@ -36,6 +36,23 @@ export class BrowserSession {
     return saveScreenshot(this.requirePage(), scope);
   }
 
+  async execute(action: { type: "click"; target: string } | { type: "scroll"; direction: "up" | "down" } | { type: "read"; target?: string } | { type: "wait"; milliseconds: number }): Promise<unknown> {
+    const page = this.requirePage();
+    switch (action.type) {
+      case "click":
+        await page.getByText(action.target, { exact: true }).first().click();
+        return pageContext(page);
+      case "scroll":
+        await page.mouse.wheel(0, action.direction === "down" ? 700 : -700);
+        return pageContext(page);
+      case "read":
+        return pageContext(page);
+      case "wait":
+        await new Promise((resolve) => setTimeout(resolve, action.milliseconds));
+        return pageContext(page);
+    }
+  }
+
   private requirePage(): Page {
     if (!this.page) throw new Error("Browser session is not running");
     return this.page;

@@ -35,8 +35,13 @@ final class AppCoordinator {
         self.voice = VoiceTranscription(backend: backend, keychain: keychain, toast: toast)
         self.screenshot = ScreenshotOCR(backend: backend, keychain: keychain, toast: toast)
         self.countdown = Countdown(toast: toast)
-        self.browser = BrowserAgentCoordinator()
+        self.browser = BrowserAgentCoordinator(backend: backend, keychain: keychain, toast: toast)
 
+        voice.onTranscribedForBrowser = { [weak self] text in
+            guard let self, self.browser.isActive else { return false }
+            await self.browser.submitVoiceCommand(text)
+            return true
+        }
         voice.setEscapeEnabled = { [weak self] enabled in
             self?.hotkeys.setEscapeEnabled(enabled)
         }

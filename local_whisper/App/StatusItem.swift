@@ -65,7 +65,7 @@ final class StatusItem: NSObject {
 
         let browserActive: Bool
         switch browserState {
-        case .starting, .idle:
+        case .starting, .idle, .planning, .awaitingConfirmation, .authenticationPaused, .executing:
             browserActive = true
         case .stopped, .failed:
             browserActive = false
