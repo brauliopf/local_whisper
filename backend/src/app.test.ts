@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { AppConfig } from "./config.js";
 import { buildApp } from "./app.js";
+import type { BrowserPlanner } from "./browser-planner.js";
 import type { BackendProvider } from "./provider.js";
 import { TranscriptionWorkflow } from "./transcription.js";
 
@@ -92,13 +93,40 @@ function multipartBody(
   };
 }
 
-async function createTestApp(provider: BackendProvider = new FakeProvider()) {
+async function createTestApp(
+  provider: BackendProvider = new FakeProvider(),
+  browserPlanner?: BrowserPlanner,
+) {
   return buildApp({
     config,
     provider,
     transcriptionWorkflow: createTranscriptionWorkflow(provider),
+    browserPlanner,
   });
 }
+
+test("browser planning validates context and returns a structured action", async () => {
+  const browserPlanner: BrowserPlanner = {
+    async plan(command, context) {
+      assert.equal(command, "read the page");
+      assert.deepEqual(context, { title: "Test", text: "Visible content" });
+      return { type: "read", requiresConfirmation: false };
+    },
+  };
+  const app = await createTestApp(new FakeProvider(), browserPlanner);
+  try {
+    const response = await app.inject({
+      method: "POST",
+      url: "/browser-plan",
+      headers: { authorization: `Bearer ${serviceToken}` },
+      payload: { command: "read the page", page: { title: "Test", text: "Visible content" } },
+    });
+    assert.equal(response.statusCode, 200);
+    assert.deepEqual(response.json().action, { type: "read", requiresConfirmation: false });
+  } finally {
+    await app.close();
+  }
+});
 
 test("status does not require authentication", async () => {
   const app = await createTestApp();

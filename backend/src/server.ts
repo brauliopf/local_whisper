@@ -1,5 +1,6 @@
 import OpenAI from "openai";
 import { buildApp } from "./app.js";
+import { OpenAIBrowserPlanner } from "./browser-planner.js";
 import { loadConfig } from "./config.js";
 import { createOpenAIImageTextProvider } from "./provider.js";
 import { TranscriptionWorkflow } from "./transcription.js";
@@ -13,6 +14,10 @@ const provider = createOpenAIImageTextProvider(
   config.transcriptionModel,
   config.translationModel,
   config.providerTimeoutMs,
+);
+const browserPlanner = new OpenAIBrowserPlanner(
+  new OpenAI({ apiKey: config.openAIAPIKey, timeout: config.providerTimeoutMs, maxRetries: 0 }),
+  config.translationModel,
 );
 const transcriptionWorkflow = new TranscriptionWorkflow({
   transcriber: provider,
@@ -29,6 +34,7 @@ const app = await buildApp({
   config,
   provider,
   transcriptionWorkflow,
+  browserPlanner,
 });
 
 const close = async (signal: string) => {
