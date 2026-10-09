@@ -81,6 +81,17 @@ final class StatusItem: NSObject {
             key: nil,
             action: #selector(toggleBrowser)
         ))
+        switch browserState {
+        case .idle, .planning, .executing:
+            menu.addItem(menuItem("Pause for Authentication", key: "p", action: #selector(pauseBrowser)))
+        case .awaitingConfirmation:
+            menu.addItem(menuItem("Confirm Browser Action", key: "c", action: #selector(confirmBrowser)))
+            menu.addItem(menuItem("Cancel Browser Action", key: "x", action: #selector(cancelBrowser)))
+        case .authenticationPaused:
+            menu.addItem(menuItem("Resume Browser", key: "u", action: #selector(resumeBrowser)))
+        case .starting, .stopped, .failed:
+            break
+        }
         if case .failed(let message) = browserState {
             menu.addItem(NSMenuItem(title: "Browser: \(message)", action: nil, keyEquivalent: ""))
         }
@@ -128,6 +139,22 @@ final class StatusItem: NSObject {
 
     @objc private func toggleBrowser() {
         coordinator.browser.toggle()
+    }
+
+    @objc private func pauseBrowser() {
+        coordinator.pauseBrowserForAuthentication()
+    }
+
+    @objc private func confirmBrowser() {
+        coordinator.browser.confirmPendingAction()
+    }
+
+    @objc private func cancelBrowser() {
+        coordinator.browser.cancelPendingAction()
+    }
+
+    @objc private func resumeBrowser() {
+        coordinator.browser.resumeAuthentication()
     }
 
     @objc private func startTimer() {
