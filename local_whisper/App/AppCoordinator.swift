@@ -46,6 +46,9 @@ final class AppCoordinator {
             await self.browser.submitVoiceCommand(text)
             return true
         }
+        voice.canStartRecording = { [weak self] in
+            self?.browser.state != .authenticationPaused
+        }
         voice.setEscapeEnabled = { [weak self] enabled in
             self?.hotkeys.setEscapeEnabled(enabled)
         }
@@ -139,5 +142,11 @@ final class AppCoordinator {
         voice.cancelInFlightWork()
         encouragement.cancel()
         screenshot.captureAndRead()
+    }
+
+    func pauseBrowserForAuthentication() {
+        voice.cancelRecording(showToast: false)
+        voice.cancelInFlightWork()
+        browser.pauseForAuthentication()
     }
 }
