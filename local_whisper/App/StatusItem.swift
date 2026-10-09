@@ -7,6 +7,7 @@ final class StatusItem: NSObject {
     private let coordinator: AppCoordinator
     private let statusItem: NSStatusItem
     private var menuShowsRunning: Bool?
+    private var menuShowsBrowserState: BrowserAgentCoordinator.State?
     private var settingsWindow: NSWindow?
 
     init(coordinator: AppCoordinator) {
@@ -29,7 +30,10 @@ final class StatusItem: NSObject {
     private func observe() {
         withObservationTracking {
             applyRemaining(coordinator.countdown.remainingLabel)
-            rebuildMenuIfNeeded(isRunning: coordinator.countdown.isRunning)
+            rebuildMenuIfNeeded(
+                isRunning: coordinator.countdown.isRunning,
+                browserState: coordinator.browser.state
+            )
         } onChange: { [weak self] in
             Task { @MainActor in
                 self?.observe()
@@ -51,14 +55,34 @@ final class StatusItem: NSObject {
         }
     }
 
-    private func rebuildMenuIfNeeded(isRunning: Bool) {
-        guard menuShowsRunning != isRunning else { return }
+    private func rebuildMenuIfNeeded(
+        isRunning: Bool,
+        browserState: BrowserAgentCoordinator.State
+    ) {
+        guard menuShowsRunning != isRunning || menuShowsBrowserState != browserState else { return }
         menuShowsRunning = isRunning
+        menuShowsBrowserState = browserState
+
+        let browserActive: Bool
+        switch browserState {
+        case .starting, .idle:
+            browserActive = true
+        case .stopped, .failed:
+            browserActive = false
+        }
 
         let menu = NSMenu()
         menu.addItem(menuItem("Show Encouragement", key: "e", action: #selector(showEncouragement)))
         menu.addItem(menuItem("Transcribe", key: "w", action: #selector(transcribe)))
         menu.addItem(menuItem("Read screenshot", key: "r", action: #selector(readScreenshot)))
+        menu.addItem(menuItem(
+            browserActive ? "Stop Browser" : "Start Browser",
+            key: nil,
+            action: #selector(toggleBrowser)
+        ))
+        if case .failed(let message) = browserState {
+            menu.addItem(NSMenuItem(title: "Browser: \(message)", action: nil, keyEquivalent: ""))
+        }
         if isRunning {
             menu.addItem(menuItem("Cancel Timer", key: nil, action: #selector(cancelTimer)))
         } else {
@@ -95,6 +119,10 @@ final class StatusItem: NSObject {
 
     @objc private func readScreenshot() {
         coordinator.readScreenshot()
+    }
+
+    @objc private func toggleBrowser() {
+        coordinator.browser.toggle()
     }
 
     @objc private func startTimer() {

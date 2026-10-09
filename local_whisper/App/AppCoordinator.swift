@@ -17,6 +17,7 @@ final class AppCoordinator {
     private let voice: VoiceTranscription
     private let screenshot: ScreenshotOCR
     let countdown: Countdown
+    let browser: BrowserAgentCoordinator
     private var didFinishLaunching = false
 
     convenience init() {
@@ -34,6 +35,7 @@ final class AppCoordinator {
         self.voice = VoiceTranscription(backend: backend, keychain: keychain, toast: toast)
         self.screenshot = ScreenshotOCR(backend: backend, keychain: keychain, toast: toast)
         self.countdown = Countdown(toast: toast)
+        self.browser = BrowserAgentCoordinator()
 
         voice.setEscapeEnabled = { [weak self] enabled in
             self?.hotkeys.setEscapeEnabled(enabled)
