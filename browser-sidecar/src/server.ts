@@ -40,6 +40,7 @@ let pauseGeneration = 0;
 let sessionID: string | undefined;
 let lifecycleGeneration = 0;
 let shuttingDown = false;
+let launchInFlight: Promise<Browser> | undefined;
 
 function reply(command: Command, ok: boolean, state: SidecarState, error?: string): void {
   process.stdout.write(`${JSON.stringify({
@@ -151,7 +152,14 @@ async function start(): Promise<PageSnapshot | undefined> {
   shuttingDown = false;
   if (!browser) {
     const generation = lifecycleGeneration;
-    const launchedBrowser = await chromium.launch({ headless: false });
+    const launchPromise = chromium.launch({ headless: false });
+    launchInFlight = launchPromise;
+    let launchedBrowser: Browser;
+    try {
+      launchedBrowser = await launchPromise;
+    } finally {
+      if (launchInFlight === launchPromise) launchInFlight = undefined;
+    }
     // Publish ownership immediately so EOF/signal shutdown can close a browser
     // while context/page initialization is still in flight.
     browser = launchedBrowser;
@@ -274,7 +282,11 @@ input.on("line", (line) => {
 const shutdown = async (): Promise<void> => {
   shuttingDown = true;
   lifecycleGeneration += 1;
-  await browser?.close();
+  const pendingLaunch = launchInFlight;
+  const launchedBrowser = pendingLaunch ? await pendingLaunch.catch(() => undefined) : undefined;
+  const ownedBrowser = browser;
+  await ownedBrowser?.close();
+  if (launchedBrowser && launchedBrowser !== ownedBrowser) await launchedBrowser.close().catch(() => undefined);
   browser = undefined;
   context = undefined;
   page = undefined;
