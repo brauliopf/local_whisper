@@ -14,6 +14,7 @@ const bearerPattern = /\bBearer\s+[A-Za-z0-9._~+/=-]+/gi;
 const jwtPattern = /\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g;
 const labeledCodePattern = /\b(?:otp|one[-_ ]?time|verification|security)(?:\s+(?:code|number))?\s*[:=-]?\s*\d{4,8}\b/gi;
 const labeledIdentityPattern = /\b(?:username|user[-_ ]?name|email|e-mail)\s*[:=-]\s*\S+/gi;
+const labeledSecretPattern = /\b(?:password|passcode|secret|token|api[-_ ]?key|cvv|cvc|security code)\s*[:=-]\s*\S+/gi;
 
 export function isSensitiveControl(control: {
   type?: string | null;
@@ -36,7 +37,8 @@ export function redactText(value: string): string {
     .replace(bearerPattern, "Bearer [REDACTED_TOKEN]")
     .replace(jwtPattern, "[REDACTED_TOKEN]")
     .replace(labeledCodePattern, "[REDACTED_CODE]")
-    .replace(labeledIdentityPattern, "[REDACTED_IDENTITY]");
+    .replace(labeledIdentityPattern, "[REDACTED_IDENTITY]")
+    .replace(labeledSecretPattern, "[REDACTED_SECRET]");
 }
 
 export function redactControl(control: {
@@ -60,7 +62,6 @@ export function redactControl(control: {
 export interface PageSnapshot {
   url: string;
   title: string;
-  visibleText: string;
   controls: RedactedControl[];
   stateHash: string;
 }
@@ -70,7 +71,7 @@ export function sanitizeURL(value: string): string {
     const url = new URL(value);
     if (url.protocol === "about:") return url.toString();
     if (url.protocol !== "http:" && url.protocol !== "https:") return "[REDACTED_URL]";
-    const path = redactText(url.pathname).replace(/\/[^/]{20,}/g, "/[REDACTED_PATH]");
+    const path = url.pathname === "/" ? "/" : "/[REDACTED_PATH]";
     return `${url.origin}${path}${url.search ? "?[REDACTED_QUERY]" : ""}`;
   } catch {
     return "[REDACTED_URL]";

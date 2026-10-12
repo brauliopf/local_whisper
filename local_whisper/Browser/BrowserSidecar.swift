@@ -11,7 +11,6 @@ struct BrowserControl: Codable, Sendable {
 struct BrowserPageSnapshot: Codable, Sendable {
     let url: String
     let title: String
-    let visibleText: String
     let controls: [BrowserControl]
     let stateHash: String
 }
@@ -68,6 +67,7 @@ final class BrowserSidecar {
     private var output: Pipe?
     private var outputBuffer = Data()
     private var sessionID: String?
+    private var pending: [String: Task<Void, Never>] = [:]
 
     var isStarted: Bool { process?.isRunning == true }
 
@@ -95,15 +95,19 @@ final class BrowserSidecar {
             let data = handle.availableData
             guard !data.isEmpty else { return }
             DispatchQueue.main.async {
+                guard self?.sessionID == sessionID else { return }
                 self?.receive(data)
             }
         }
         process.terminationHandler = { [weak self] process in
             DispatchQueue.main.async {
-                guard let self else { return }
+                guard let self, self.process === process, self.sessionID == sessionID else { return }
+                self.pending.values.forEach { $0.cancel() }
+                self.pending.removeAll()
                 self.process = nil
                 self.input = nil
                 self.output = nil
+                self.sessionID = nil
                 self.onExit?(process.terminationStatus)
             }
         }
@@ -114,6 +118,7 @@ final class BrowserSidecar {
             self.process = nil
             self.input = nil
             self.output = nil
+            self.sessionID = nil
             throw BrowserSidecarError.launchFailed
         }
     }
@@ -139,6 +144,8 @@ final class BrowserSidecar {
             try? send(type: "stop")
         }
         output?.fileHandleForReading.readabilityHandler = nil
+        pending.values.forEach { $0.cancel() }
+        pending.removeAll()
         process?.terminate()
         process = nil
         input = nil
@@ -150,8 +157,14 @@ final class BrowserSidecar {
         guard isStarted, let input, let sessionID else {
             throw BrowserSidecarError.unavailable
         }
+        let id = UUID().uuidString
+        pending[id] = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(Self.commandTimeout))
+            guard !Task.isCancelled else { return }
+            self?.timeout(id: id, sessionID: sessionID)
+        }
         let command: [String: Any] = [
-            "id": UUID().uuidString,
+            "id": id,
             "version": Self.protocolVersion,
             "session_id": sessionID,
             "deadline_ms": Int(Date().addingTimeInterval(Self.commandTimeout).timeIntervalSince1970 * 1_000),
@@ -170,12 +183,27 @@ final class BrowserSidecar {
             guard
                 let response = try? JSONDecoder().decode(BrowserSidecarResponse.self, from: line),
                 response.version == Self.protocolVersion,
-                response.sessionID == sessionID
+                response.sessionID == sessionID,
+                let request = pending.removeValue(forKey: response.id)
             else {
                 continue
             }
+            request.cancel()
             onResponse?(response)
         }
+    }
+
+    private func timeout(id: String, sessionID: String) {
+        guard pending.removeValue(forKey: id) != nil else { return }
+        onResponse?(BrowserSidecarResponse(
+            id: id,
+            version: Self.protocolVersion,
+            sessionID: sessionID,
+            ok: false,
+            status: .running,
+            snapshot: nil,
+            error: "request_timeout"
+        ))
     }
 
     private static func executableURL() -> URL? {

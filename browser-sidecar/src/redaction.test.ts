@@ -16,12 +16,12 @@ test("identifies sensitive controls from semantics", () => {
 });
 
 test("redacts labeled identity and verification values", () => {
-  assert.equal(redactText("Username: alice Email: alice@example.com OTP: 123456"), "[REDACTED_IDENTITY] [REDACTED_IDENTITY] [REDACTED_CODE]");
+  assert.equal(redactText("Username: alice Email: alice@example.com OTP: 123456 Password: hunter2"), "[REDACTED_IDENTITY] [REDACTED_IDENTITY] [REDACTED_CODE] [REDACTED_SECRET]");
 });
 
 test("sanitizes URLs without exposing query values", () => {
-  assert.equal(sanitizeURL("https://example.test/path?token=secret#private"), "https://example.test/path?[REDACTED_QUERY]");
-  assert.equal(sanitizeURL("https://example.test/session/very-long-secret-token-value"), "https://example.test/session/[REDACTED_PATH]");
+  assert.equal(sanitizeURL("https://example.test/path?token=secret#private"), "https://example.test/[REDACTED_PATH]?[REDACTED_QUERY]");
+  assert.equal(sanitizeURL("https://example.test/session/very-long-secret-token-value"), "https://example.test/[REDACTED_PATH]");
   assert.equal(sanitizeURL("javascript:alert(1)"), "[REDACTED_URL]");
 });
 

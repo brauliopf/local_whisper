@@ -57,6 +57,23 @@ function errorCategory(error: unknown): string {
   return "browser_operation_failed";
 }
 
+async function withDeadline<T>(deadline: number | undefined, operation: () => Promise<T>): Promise<T> {
+  if (deadline === undefined) return operation();
+  const remaining = deadline - Date.now();
+  if (remaining <= 0) throw new Error("operation timeout");
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      operation(),
+      new Promise<T>((_, reject) => {
+        timer = setTimeout(() => reject(new Error("operation timeout")), remaining);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 async function snapshot(): Promise<PageSnapshot | undefined> {
   if (!page) throw new Error("Browser tab is not running");
   const generation = pauseGeneration;
@@ -88,7 +105,6 @@ async function snapshot(): Promise<PageSnapshot | undefined> {
     return {
       url: location.href,
       title: document.title,
-      visibleText: document.body?.innerText ?? "",
       controls,
     };
   });
@@ -98,7 +114,6 @@ async function snapshot(): Promise<PageSnapshot | undefined> {
   const redacted = {
     url: sanitizeURL(data.url),
     title: redactText(data.title),
-    visibleText: redactText(data.visibleText),
     controls: data.controls.map(redactControl),
   };
   return {
@@ -148,7 +163,7 @@ async function handle(command: Command): Promise<void> {
   try {
     switch (command.type) {
       case "start": {
-        const pageSnapshot = await start();
+        const pageSnapshot = await withDeadline(command.deadline_ms, start);
         reply(command, true, { status: "running", ...(pageSnapshot ? { snapshot: pageSnapshot } : {}) });
         return;
       }
@@ -157,7 +172,7 @@ async function handle(command: Command): Promise<void> {
           reply(command, true, { status: "paused" });
           return;
         }
-        const pageSnapshot = await snapshot();
+        const pageSnapshot = await withDeadline(command.deadline_ms, snapshot);
         reply(command, true, { status: pageSnapshot ? "running" : "paused", ...(pageSnapshot ? { snapshot: pageSnapshot } : {}) });
         return;
       }
@@ -169,12 +184,14 @@ async function handle(command: Command): Promise<void> {
       case "resume": {
         paused = false;
         pauseGeneration += 1;
-        const pageSnapshot = await snapshot();
+        const pageSnapshot = await withDeadline(command.deadline_ms, snapshot);
         reply(command, true, { status: "running", ...(pageSnapshot ? { snapshot: pageSnapshot } : {}) });
         return;
       }
       case "stop":
-        await browser?.close();
+        await withDeadline(command.deadline_ms, async () => {
+          await browser?.close();
+        });
         browser = undefined;
         context = undefined;
         page = undefined;
@@ -199,6 +216,9 @@ input.on("line", (line) => {
   } catch {
     process.stderr.write("Invalid sidecar command\n");
   }
+});
+input.on("close", () => {
+  void browser?.close().finally(() => process.exit(0));
 });
 
 process.on("SIGTERM", () => void browser?.close().finally(() => process.exit(0)));

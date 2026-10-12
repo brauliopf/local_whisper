@@ -20,7 +20,7 @@ fi
 npm --prefix "$sidecar_dir" run build
 
 mkdir -p "$runtime_dir" "$output_dir"
-rm -rf "$runtime_dir/dist" "$runtime_dir/node_modules"
+rm -rf "$runtime_dir/dist" "$runtime_dir/node_modules" "$runtime_dir/node" "$output_dir/browser-sidecar"
 cp -R "$sidecar_dir/dist" "$runtime_dir/dist"
 cp -R "$sidecar_dir/node_modules" "$runtime_dir/node_modules"
 cp "$node_binary" "$runtime_dir/node"
