@@ -12,6 +12,7 @@ const provider = createOpenAIImageTextProvider(
   config.encouragementModel,
   config.transcriptionModel,
   config.translationModel,
+  config.browserPlannerModel,
   config.providerTimeoutMs,
 );
 const transcriptionWorkflow = new TranscriptionWorkflow({
@@ -28,6 +29,7 @@ const transcriptionWorkflow = new TranscriptionWorkflow({
 const app = await buildApp({
   config,
   provider,
+  planner: provider,
   transcriptionWorkflow,
 });
 

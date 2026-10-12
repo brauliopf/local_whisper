@@ -19,6 +19,7 @@ const config: AppConfig = {
   encouragementModel: "gpt-4o-mini",
   transcriptionModel: "whisper-1",
   translationModel: "gpt-4o-mini",
+  browserPlannerModel: "gpt-4o-mini",
   typesafeModel: "jev-1.13.0",
   imageMaxBytes: 10 * 1024 * 1024,
   audioMaxBytes: 25 * 1024 * 1024,
@@ -63,6 +64,18 @@ const alwaysEnglishClassifier = {
   },
 };
 
+const fakePlanner = {
+  async generateBrowserPlan() {
+    return {
+      code: "await page.goto('https://example.test');",
+      planID: "test-plan",
+      policyVersion: "browser-policy-v1",
+      stateHash: "test-state",
+      expiresAt: "2099-01-01T00:00:00.000Z",
+    };
+  },
+};
+
 function createTranscriptionWorkflow(provider: BackendProvider) {
   return new TranscriptionWorkflow({
     transcriber: provider,
@@ -96,6 +109,7 @@ async function createTestApp(provider: BackendProvider = new FakeProvider()) {
   return buildApp({
     config,
     provider,
+    planner: fakePlanner,
     transcriptionWorkflow: createTranscriptionWorkflow(provider),
   });
 }
@@ -122,6 +136,7 @@ test("status reports an optional TypeSafe key as unconfigured", async () => {
   const app = await buildApp({
     config: { ...config, typesafeAPIKey: "" },
     provider: new FakeProvider(),
+    planner: fakePlanner,
     transcriptionWorkflow: createTranscriptionWorkflow(new FakeProvider()),
   });
   try {
@@ -131,6 +146,57 @@ test("status reports an optional TypeSafe key as unconfigured", async () => {
       openai: { configured: true },
       typesafe: { configured: false },
     });
+  } finally {
+    await app.close();
+  }
+});
+
+test("returns a schema-validated browser plan", async () => {
+  const app = await createTestApp();
+  try {
+    const response = await app.inject({
+      method: "POST",
+      url: "/browser-plans",
+      headers: {
+        authorization: `Bearer ${serviceToken}`,
+        "content-type": "application/json",
+      },
+      payload: JSON.stringify({
+        goal: "Search for Botero",
+        page_state: { url: "https://example.test", state_hash: "test-state" },
+        capability_policy: { allowed_actions: ["navigate", "click"] },
+        policy_version: "browser-policy-v1",
+        session_id: "session-1",
+      }),
+    });
+    assert.equal(response.statusCode, 200);
+    assert.deepEqual(response.json(), {
+      code: "await page.goto('https://example.test');",
+      plan_id: "test-plan",
+      policy_version: "browser-policy-v1",
+      state_hash: "test-state",
+      expires_at: "2099-01-01T00:00:00.000Z",
+      request_id: String(response.headers["x-request-id"]),
+    });
+  } finally {
+    await app.close();
+  }
+});
+
+test("rejects an invalid browser plan request", async () => {
+  const app = await createTestApp();
+  try {
+    const response = await app.inject({
+      method: "POST",
+      url: "/browser-plans",
+      headers: {
+        authorization: `Bearer ${serviceToken}`,
+        "content-type": "application/json",
+      },
+      payload: JSON.stringify({ goal: "" }),
+    });
+    assert.equal(response.statusCode, 400);
+    assert.equal(response.json().error.code, "invalid_input");
   } finally {
     await app.close();
   }

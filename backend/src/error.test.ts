@@ -15,6 +15,7 @@ const config: AppConfig = {
   encouragementModel: "gpt-4o-mini",
   transcriptionModel: "whisper-1",
   translationModel: "gpt-4o-mini",
+  browserPlannerModel: "gpt-4o-mini",
   typesafeModel: "jev-1.13.0",
   imageMaxBytes: 10 * 1024 * 1024,
   audioMaxBytes: 25 * 1024 * 1024,
@@ -50,6 +51,18 @@ class FailingProvider implements BackendProvider {
   }
 }
 
+const fakePlanner = {
+  async generateBrowserPlan() {
+    return {
+      code: "await page.goto('https://example.test');",
+      planID: "test-plan",
+      policyVersion: "browser-policy-v1",
+      stateHash: "test-state",
+      expiresAt: "2099-01-01T00:00:00.000Z",
+    };
+  },
+};
+
 function transcriptionWorkflow(provider: BackendProvider) {
   return new TranscriptionWorkflow({
     transcriber: provider,
@@ -78,6 +91,7 @@ test("normalizes provider failures", async () => {
   const app = await buildApp({
     config,
     provider,
+    planner: fakePlanner,
     transcriptionWorkflow: transcriptionWorkflow(provider),
   });
   const request = multipartBody();
