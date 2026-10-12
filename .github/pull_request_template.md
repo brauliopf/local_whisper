@@ -1,6 +1,14 @@
-## Summary
+## WHY
 
-<!-- What changed and why? -->
+<!-- Why is this relevant? What motivates the change? Which alternatives were considered, and why did this approach win? -->
+
+## WHAT
+
+<!-- Describe the solution and the value it adds to the system. -->
+
+## HOW
+
+<!-- Describe what was implemented, what changed, and what is new. -->
 
 ## Testing
 
