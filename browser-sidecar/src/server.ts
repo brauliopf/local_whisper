@@ -152,19 +152,22 @@ async function start(): Promise<PageSnapshot | undefined> {
   if (!browser) {
     const generation = lifecycleGeneration;
     const launchedBrowser = await chromium.launch({ headless: false });
-    if (generation !== lifecycleGeneration || shuttingDown) {
-      await launchedBrowser.close();
-      throw new Error("operation timeout");
+    try {
+      if (generation !== lifecycleGeneration || shuttingDown) {
+        throw new Error("operation timeout");
+      }
+      const launchedContext = await launchedBrowser.newContext();
+      const launchedPage = await launchedContext.newPage();
+      if (generation !== lifecycleGeneration || shuttingDown) {
+        throw new Error("operation timeout");
+      }
+      browser = launchedBrowser;
+      context = launchedContext;
+      page = launchedPage;
+    } catch (error) {
+      await launchedBrowser.close().catch(() => undefined);
+      throw error;
     }
-    const launchedContext = await launchedBrowser.newContext();
-    const launchedPage = await launchedContext.newPage();
-    if (generation !== lifecycleGeneration || shuttingDown) {
-      await launchedBrowser.close();
-      throw new Error("operation timeout");
-    }
-    browser = launchedBrowser;
-    context = launchedContext;
-    page = launchedPage;
     context.on("page", (extraPage) => {
       if (extraPage !== page) {
         void extraPage.close();
