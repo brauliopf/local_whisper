@@ -8,6 +8,7 @@ final class StatusItem: NSObject {
     private let statusItem: NSStatusItem
     private var menuState: String?
     private var settingsWindow: NSWindow?
+    private var planPreviewWindow: NSWindow?
 
     init(coordinator: AppCoordinator) {
         self.coordinator = coordinator
@@ -17,6 +18,9 @@ final class StatusItem: NSObject {
 
         coordinator.openSettings = { [weak self] in
             self?.openSettings()
+        }
+        coordinator.openPlanPreview = { [weak self] in
+            self?.openPlanPreview()
         }
 
         let image = NSImage(systemSymbolName: "sparkles", accessibilityDescription: "local_whisper")
@@ -31,7 +35,8 @@ final class StatusItem: NSObject {
             applyRemaining(coordinator.countdown.remainingLabel)
             rebuildMenuIfNeeded(
                 timerRunning: coordinator.countdown.isRunning,
-                browserState: String(describing: coordinator.browser.state)
+                browserState: String(describing: coordinator.browser.state),
+                hasPlanPreview: coordinator.planPreview != nil
             )
         } onChange: { [weak self] in
             Task { @MainActor in
@@ -54,8 +59,8 @@ final class StatusItem: NSObject {
         }
     }
 
-    private func rebuildMenuIfNeeded(timerRunning: Bool, browserState: String) {
-        let state = "\(timerRunning)-\(browserState)"
+    private func rebuildMenuIfNeeded(timerRunning: Bool, browserState: String, hasPlanPreview: Bool) {
+        let state = "\(timerRunning)-\(browserState)-\(hasPlanPreview)"
         guard menuState != state else { return }
         menuState = state
 
@@ -64,6 +69,9 @@ final class StatusItem: NSObject {
         menu.addItem(menuItem("Transcribe", key: "w", action: #selector(transcribe)))
         menu.addItem(menuItem("Read screenshot", key: "r", action: #selector(readScreenshot)))
         menu.addItem(menuItem("brwose web", key: nil, action: #selector(browseWeb)))
+        if hasPlanPreview {
+            menu.addItem(menuItem("Preview Plan", key: nil, action: #selector(openPlanPreview)))
+        }
         if timerRunning {
             menu.addItem(menuItem("Cancel Timer", key: nil, action: #selector(cancelTimer)))
         } else {
@@ -112,6 +120,30 @@ final class StatusItem: NSObject {
 
     @objc private func browseWeb() {
         coordinator.browseWeb()
+    }
+
+    @objc private func openPlanPreview() {
+        guard let plan = coordinator.planPreview else { return }
+        if planPreviewWindow == nil {
+            let window = NSWindow(
+                contentRect: NSRect(x: 0, y: 0, width: 760, height: 560),
+                styleMask: [.titled, .closable, .miniaturizable, .resizable],
+                backing: .buffered,
+                defer: false
+            )
+            window.title = "Preview Plan"
+            window.isReleasedWhenClosed = false
+            window.center()
+            planPreviewWindow = window
+        }
+
+        planPreviewWindow?.contentView = NSHostingView(
+            rootView: BrowserPlanPreview(goal: plan.goal, code: plan.code)
+        )
+        guard let planPreviewWindow else { return }
+        NSApp.activate(ignoringOtherApps: true)
+        planPreviewWindow.collectionBehavior.insert(.moveToActiveSpace)
+        planPreviewWindow.makeKeyAndOrderFront(nil)
     }
 
     @objc private func pauseBrowser() {
