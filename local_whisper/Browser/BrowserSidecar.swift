@@ -13,6 +13,7 @@ struct BrowserPageSnapshot: Codable, Sendable {
     let title: String
     let visibleText: String
     let controls: [BrowserControl]
+    let stateHash: String
 }
 
 enum BrowserSidecarStatus: String, Codable, Sendable {
@@ -24,23 +25,30 @@ enum BrowserSidecarStatus: String, Codable, Sendable {
 
 struct BrowserSidecarResponse: Codable, Sendable {
     let id: String
+    let version: Int
+    let sessionID: String
     let ok: Bool
     let status: BrowserSidecarStatus
     let snapshot: BrowserPageSnapshot?
     let error: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id, version, ok, status, snapshot, error
+        case sessionID = "session_id"
+    }
 }
 
 enum BrowserSidecarError: LocalizedError {
     case executableNotFound
-    case launchFailed(String)
+    case launchFailed
     case unavailable
 
     var errorDescription: String? {
         switch self {
         case .executableNotFound:
             return "The browser helper is not installed."
-        case .launchFailed(let message):
-            return "The browser helper could not start: \(message)"
+        case .launchFailed:
+            return "The browser helper could not start."
         case .unavailable:
             return "The browser helper is unavailable."
         }
@@ -49,20 +57,35 @@ enum BrowserSidecarError: LocalizedError {
 
 @MainActor
 final class BrowserSidecar {
+    private static let protocolVersion = 1
+    private static let commandTimeout: TimeInterval = 30
+
     var onResponse: ((BrowserSidecarResponse) -> Void)?
     var onExit: ((Int32) -> Void)?
 
-    private let process = Process()
-    private let input = Pipe()
-    private let output = Pipe()
+    private var process: Process?
+    private var input: Pipe?
+    private var output: Pipe?
     private var outputBuffer = Data()
-    private var isStarted = false
+    private var sessionID: String?
+
+    var isStarted: Bool { process?.isRunning == true }
 
     func start() throws {
         guard !isStarted else { return }
         guard let executable = Self.executableURL() else {
             throw BrowserSidecarError.executableNotFound
         }
+
+        let process = Process()
+        let input = Pipe()
+        let output = Pipe()
+        let sessionID = UUID().uuidString
+        self.process = process
+        self.input = input
+        self.output = output
+        self.sessionID = sessionID
+        outputBuffer = Data()
 
         process.executableURL = executable
         process.standardInput = input
@@ -77,16 +100,21 @@ final class BrowserSidecar {
         }
         process.terminationHandler = { [weak self] process in
             DispatchQueue.main.async {
-                self?.isStarted = false
-                self?.onExit?(process.terminationStatus)
+                guard let self else { return }
+                self.process = nil
+                self.input = nil
+                self.output = nil
+                self.onExit?(process.terminationStatus)
             }
         }
 
         do {
             try process.run()
-            isStarted = true
         } catch {
-            throw BrowserSidecarError.launchFailed(error.localizedDescription)
+            self.process = nil
+            self.input = nil
+            self.output = nil
+            throw BrowserSidecarError.launchFailed
         }
     }
 
@@ -110,16 +138,25 @@ final class BrowserSidecar {
         if isStarted {
             try? send(type: "stop")
         }
-        output.fileHandleForReading.readabilityHandler = nil
-        if process.isRunning {
-            process.terminate()
-        }
-        isStarted = false
+        output?.fileHandleForReading.readabilityHandler = nil
+        process?.terminate()
+        process = nil
+        input = nil
+        output = nil
+        sessionID = nil
     }
 
     private func send(type: String) throws {
-        guard isStarted else { throw BrowserSidecarError.unavailable }
-        let command: [String: String] = ["id": UUID().uuidString, "type": type]
+        guard isStarted, let input, let sessionID else {
+            throw BrowserSidecarError.unavailable
+        }
+        let command: [String: Any] = [
+            "id": UUID().uuidString,
+            "version": Self.protocolVersion,
+            "session_id": sessionID,
+            "deadline_ms": Int(Date().addingTimeInterval(Self.commandTimeout).timeIntervalSince1970 * 1_000),
+            "type": type,
+        ]
         let data = try JSONSerialization.data(withJSONObject: command)
         input.fileHandleForWriting.write(data)
         input.fileHandleForWriting.write(Data([0x0A]))
@@ -130,7 +167,11 @@ final class BrowserSidecar {
         while let newline = outputBuffer.firstIndex(of: 0x0A) {
             let line = outputBuffer.prefix(upTo: newline)
             outputBuffer.removeSubrange(...newline)
-            guard let response = try? JSONDecoder().decode(BrowserSidecarResponse.self, from: line) else {
+            guard
+                let response = try? JSONDecoder().decode(BrowserSidecarResponse.self, from: line),
+                response.version == Self.protocolVersion,
+                response.sessionID == sessionID
+            else {
                 continue
             }
             onResponse?(response)

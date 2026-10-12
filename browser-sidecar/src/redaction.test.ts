@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { isSensitiveControl, redactControl, redactText } from "./redaction.js";
+import { isSensitiveControl, redactControl, redactText, sanitizeURL } from "./redaction.js";
 
 test("redacts credentials and payment-like text", () => {
   const text = "Email me@example.com and use 4111 1111 1111 1111";
@@ -9,8 +9,20 @@ test("redacts credentials and payment-like text", () => {
 
 test("identifies sensitive controls from semantics", () => {
   assert.equal(isSensitiveControl({ type: "password" }), true);
+  assert.equal(isSensitiveControl({ type: "email" }), true);
   assert.equal(isSensitiveControl({ autocomplete: "one-time-code" }), true);
+  assert.equal(isSensitiveControl({ autocomplete: "cc-number" }), true);
   assert.equal(isSensitiveControl({ label: "Search" }), false);
+});
+
+test("redacts labeled identity and verification values", () => {
+  assert.equal(redactText("Username: alice Email: alice@example.com OTP: 123456"), "[REDACTED_IDENTITY] [REDACTED_IDENTITY] [REDACTED_CODE]");
+});
+
+test("sanitizes URLs without exposing query values", () => {
+  assert.equal(sanitizeURL("https://example.test/path?token=secret#private"), "https://example.test/path?[REDACTED_QUERY]");
+  assert.equal(sanitizeURL("https://example.test/session/very-long-secret-token-value"), "https://example.test/session/[REDACTED_PATH]");
+  assert.equal(sanitizeURL("javascript:alert(1)"), "[REDACTED_URL]");
 });
 
 test("preserves safe control values and hides sensitive values", () => {

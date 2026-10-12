@@ -1,17 +1,22 @@
+import { createHash } from "node:crypto";
 import { createInterface } from "node:readline";
 import { chromium, type Browser, type BrowserContext, type Page } from "playwright";
 import {
   redactControl,
   redactText,
+  sanitizeURL,
   type PageSnapshot,
 } from "./redaction.js";
 
-type Command =
-  | { id: string; type: "start" }
-  | { id: string; type: "snapshot" }
-  | { id: string; type: "pause" }
-  | { id: string; type: "resume" }
-  | { id: string; type: "stop" };
+const PROTOCOL_VERSION = 1;
+
+type Command = {
+  id: string;
+  version: number;
+  session_id: string;
+  deadline_ms?: number;
+  type: "start" | "snapshot" | "pause" | "resume" | "stop";
+};
 
 interface ControlData {
   tag: string;
@@ -31,13 +36,30 @@ let browser: Browser | undefined;
 let context: BrowserContext | undefined;
 let page: Page | undefined;
 let paused = false;
+let pauseGeneration = 0;
+let sessionID: string | undefined;
 
-function reply(id: string, ok: boolean, state: SidecarState, error?: string): void {
-  process.stdout.write(`${JSON.stringify({ id, ok, ...state, ...(error ? { error } : {}) })}\n`);
+function reply(command: Command, ok: boolean, state: SidecarState, error?: string): void {
+  process.stdout.write(`${JSON.stringify({
+    id: command.id,
+    version: PROTOCOL_VERSION,
+    session_id: command.session_id,
+    ok,
+    ...state,
+    ...(error ? { error } : {}),
+  })}\n`);
 }
 
-async function snapshot(): Promise<PageSnapshot> {
+function errorCategory(error: unknown): string {
+  const message = error instanceof Error ? error.message.toLowerCase() : "";
+  if (message.includes("timeout")) return "operation_timeout";
+  if (message.includes("launch") || message.includes("executable")) return "browser_unavailable";
+  return "browser_operation_failed";
+}
+
+async function snapshot(): Promise<PageSnapshot | undefined> {
   if (!page) throw new Error("Browser tab is not running");
+  const generation = pauseGeneration;
 
   const data = await page.evaluate(() => {
     const labelFor = (element: Element): string | null => {
@@ -71,15 +93,21 @@ async function snapshot(): Promise<PageSnapshot> {
     };
   });
 
-  return {
-    url: data.url,
+  if (paused || generation !== pauseGeneration) return undefined;
+
+  const redacted = {
+    url: sanitizeURL(data.url),
     title: redactText(data.title),
     visibleText: redactText(data.visibleText),
     controls: data.controls.map(redactControl),
   };
+  return {
+    ...redacted,
+    stateHash: createHash("sha256").update(JSON.stringify(redacted)).digest("hex"),
+  };
 }
 
-async function start(): Promise<PageSnapshot> {
+async function start(): Promise<PageSnapshot | undefined> {
   if (!browser) {
     browser = await chromium.launch({ headless: false });
     context = await browser.newContext();
@@ -87,7 +115,7 @@ async function start(): Promise<PageSnapshot> {
     context.on("page", (extraPage) => {
       if (extraPage !== page) {
         void extraPage.close();
-        console.error("Rejected unexpected additional browser tab");
+        process.stderr.write("Rejected unexpected additional browser tab\n");
       }
     });
     browser.on("disconnected", () => {
@@ -95,6 +123,7 @@ async function start(): Promise<PageSnapshot> {
       context = undefined;
       page = undefined;
       paused = false;
+      pauseGeneration += 1;
     });
   }
   if (!page) throw new Error("Browser tab is unavailable");
@@ -102,45 +131,71 @@ async function start(): Promise<PageSnapshot> {
 }
 
 async function handle(command: Command): Promise<void> {
+  if (command.version !== PROTOCOL_VERSION || !command.session_id) {
+    reply(command, false, { status: "idle" }, "protocol_invalid");
+    return;
+  }
+  if (sessionID && command.session_id !== sessionID) {
+    reply(command, false, { status: browser ? "running" : "idle" }, "session_mismatch");
+    return;
+  }
+  if (command.type === "start") sessionID = command.session_id;
+  if (command.deadline_ms !== undefined && Date.now() > command.deadline_ms) {
+    reply(command, false, { status: browser ? (paused ? "paused" : "running") : "idle" }, "request_expired");
+    return;
+  }
+
   try {
     switch (command.type) {
-      case "start":
-        reply(command.id, true, { status: "running", snapshot: await start() });
+      case "start": {
+        const pageSnapshot = await start();
+        reply(command, true, { status: "running", ...(pageSnapshot ? { snapshot: pageSnapshot } : {}) });
         return;
-      case "snapshot":
+      }
+      case "snapshot": {
         if (paused) {
-          reply(command.id, true, { status: "paused" });
+          reply(command, true, { status: "paused" });
           return;
         }
-        reply(command.id, true, { status: "running", snapshot: await snapshot() });
+        const pageSnapshot = await snapshot();
+        reply(command, true, { status: pageSnapshot ? "running" : "paused", ...(pageSnapshot ? { snapshot: pageSnapshot } : {}) });
         return;
+      }
       case "pause":
         paused = true;
-        reply(command.id, true, { status: "paused" });
+        pauseGeneration += 1;
+        reply(command, true, { status: "paused" });
         return;
-      case "resume":
+      case "resume": {
         paused = false;
-        reply(command.id, true, { status: "running", snapshot: await snapshot() });
+        pauseGeneration += 1;
+        const pageSnapshot = await snapshot();
+        reply(command, true, { status: "running", ...(pageSnapshot ? { snapshot: pageSnapshot } : {}) });
         return;
+      }
       case "stop":
         await browser?.close();
         browser = undefined;
         context = undefined;
         page = undefined;
         paused = false;
-        reply(command.id, true, { status: "stopped" });
+        pauseGeneration += 1;
+        sessionID = undefined;
+        reply(command, true, { status: "stopped" });
+        setImmediate(() => process.exit(0));
         return;
     }
   } catch (error) {
-    reply(command.id, false, { status: browser ? (paused ? "paused" : "running") : "idle" }, error instanceof Error ? error.message : "Sidecar request failed");
+    reply(command, false, { status: browser ? (paused ? "paused" : "running") : "idle" }, errorCategory(error));
   }
 }
 
 const input = createInterface({ input: process.stdin, crlfDelay: Infinity });
+let commandQueue = Promise.resolve();
 input.on("line", (line) => {
   try {
     const command = JSON.parse(line) as Command;
-    void handle(command);
+    commandQueue = commandQueue.then(() => handle(command)).catch(() => undefined);
   } catch {
     process.stderr.write("Invalid sidecar command\n");
   }
