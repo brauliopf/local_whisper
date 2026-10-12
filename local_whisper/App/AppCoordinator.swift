@@ -11,6 +11,9 @@ final class AppCoordinator {
         }
     }
 
+    var openPlanPreview: (() -> Void)?
+    private(set) var planPreview: (goal: String, code: String)?
+
     private let toast = ToastPresenter()
     private let hotkeys = Hotkeys()
     private let encouragement: Encouragement
@@ -99,6 +102,13 @@ final class AppCoordinator {
 
     func browseWeb() {
         browser.browseWeb()
+    }
+
+    func showBrowserPlan(goal: String, response: BackendBrowserPlanResponse) {
+        guard !goal.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              !response.code.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        planPreview = (goal, response.code)
+        openPlanPreview?()
     }
 
     func showEncouragement() {
