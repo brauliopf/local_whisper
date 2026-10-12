@@ -17,6 +17,7 @@ test("identifies sensitive controls from semantics", () => {
 
 test("redacts labeled identity and verification values", () => {
   assert.equal(redactText("Username: alice Email: alice@example.com OTP: 123456 Password: hunter2"), "[REDACTED_IDENTITY] [REDACTED_IDENTITY] [REDACTED_CODE] [REDACTED_SECRET]");
+  assert.equal(redactText("password=hunter2 token:abc123 api_key=supersecret"), "[REDACTED_SECRET] [REDACTED_SECRET] [REDACTED_SECRET]");
 });
 
 test("sanitizes URLs without exposing query values", () => {

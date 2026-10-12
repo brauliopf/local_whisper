@@ -192,11 +192,11 @@ async function handle(command: Command): Promise<void> {
     reply(command, false, { status: browser ? "running" : "idle" }, "session_mismatch");
     return;
   }
-  if (command.type === "start") sessionID = command.session_id;
   if (command.deadline_ms !== undefined && Date.now() > command.deadline_ms) {
     reply(command, false, { status: browser ? (paused ? "paused" : "running") : "idle" }, "request_expired");
     return;
   }
+  if (command.type === "start") sessionID = command.session_id;
 
   try {
     switch (command.type) {

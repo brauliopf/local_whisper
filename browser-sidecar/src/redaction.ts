@@ -14,7 +14,7 @@ const bearerPattern = /\bBearer\s+[A-Za-z0-9._~+/=-]+/gi;
 const jwtPattern = /\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g;
 const labeledCodePattern = /\b(?:otp|one[-_ ]?time|verification|security)(?:\s+(?:code|number))?\s*[:=-]?\s*\d{4,8}\b/gi;
 const labeledIdentityPattern = /\b(?:username|user[-_ ]?name|email|e-mail)\s*[:=-]?\s*\S+/gi;
-const labeledSecretPattern = /\b(?:password|passcode|secret|token|api[-_ ]?key|cvv|cvc|security code)\s*[:=-]?\s+\S+/gi;
+const labeledSecretPattern = /\b(?:password|passcode|secret|token|api[-_ ]?key|cvv|cvc|security code)\s*[:=-]?\s*\S+/gi;
 
 export function isSensitiveControl(control: {
   type?: string | null;
