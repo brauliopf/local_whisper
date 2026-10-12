@@ -245,14 +245,9 @@ async function handle(command: Command): Promise<void> {
         return;
       }
       case "stop":
-        shuttingDown = true;
-        lifecycleGeneration += 1;
-        await withDeadline(command.deadline_ms, async () => {
-          await browser?.close();
-        });
-        browser = undefined;
-        context = undefined;
-        page = undefined;
+        // Stop is a lifecycle barrier: cleanup must await an in-flight launch,
+        // even if the original start request already timed out.
+        await shutdown();
         paused = false;
         pauseGeneration += 1;
         sessionID = undefined;
