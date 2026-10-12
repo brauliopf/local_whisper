@@ -6,7 +6,7 @@ import SwiftUI
 final class StatusItem: NSObject {
     private let coordinator: AppCoordinator
     private let statusItem: NSStatusItem
-    private var menuShowsRunning: Bool?
+    private var menuState: String?
     private var settingsWindow: NSWindow?
 
     init(coordinator: AppCoordinator) {
@@ -29,7 +29,10 @@ final class StatusItem: NSObject {
     private func observe() {
         withObservationTracking {
             applyRemaining(coordinator.countdown.remainingLabel)
-            rebuildMenuIfNeeded(isRunning: coordinator.countdown.isRunning)
+            rebuildMenuIfNeeded(
+                timerRunning: coordinator.countdown.isRunning,
+                browserState: String(describing: coordinator.browser.state)
+            )
         } onChange: { [weak self] in
             Task { @MainActor in
                 self?.observe()
@@ -51,18 +54,28 @@ final class StatusItem: NSObject {
         }
     }
 
-    private func rebuildMenuIfNeeded(isRunning: Bool) {
-        guard menuShowsRunning != isRunning else { return }
-        menuShowsRunning = isRunning
+    private func rebuildMenuIfNeeded(timerRunning: Bool, browserState: String) {
+        let state = "\(timerRunning)-\(browserState)"
+        guard menuState != state else { return }
+        menuState = state
 
         let menu = NSMenu()
         menu.addItem(menuItem("Show Encouragement", key: "e", action: #selector(showEncouragement)))
         menu.addItem(menuItem("Transcribe", key: "w", action: #selector(transcribe)))
         menu.addItem(menuItem("Read screenshot", key: "r", action: #selector(readScreenshot)))
-        if isRunning {
+        menu.addItem(menuItem("brwose web", key: nil, action: #selector(browseWeb)))
+        if timerRunning {
             menu.addItem(menuItem("Cancel Timer", key: nil, action: #selector(cancelTimer)))
         } else {
             menu.addItem(menuItem("Start Timer", key: "t", action: #selector(startTimer)))
+        }
+        if coordinator.browser.state == .running {
+            menu.addItem(menuItem("Pause Browser", key: nil, action: #selector(pauseBrowser)))
+        } else if coordinator.browser.state == .pausedForUser {
+            menu.addItem(menuItem("Resume Browser", key: nil, action: #selector(resumeBrowser)))
+        }
+        if coordinator.browser.isActive {
+            menu.addItem(menuItem("Stop Browser", key: nil, action: #selector(stopBrowser)))
         }
         menu.addItem(.separator())
         menu.addItem(menuItem("Settings…", key: "s", action: #selector(openSettings)))
@@ -95,6 +108,22 @@ final class StatusItem: NSObject {
 
     @objc private func readScreenshot() {
         coordinator.readScreenshot()
+    }
+
+    @objc private func browseWeb() {
+        coordinator.browseWeb()
+    }
+
+    @objc private func pauseBrowser() {
+        coordinator.browser.pause()
+    }
+
+    @objc private func resumeBrowser() {
+        coordinator.browser.resume()
+    }
+
+    @objc private func stopBrowser() {
+        coordinator.browser.stop()
     }
 
     @objc private func startTimer() {
