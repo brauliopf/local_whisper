@@ -32,9 +32,10 @@ test("shutdown awaits a pending browser launch", async () => {
 test("shutdown closes published ownership and does not double-close it", async () => {
   const browser = {};
   const closed: object[] = [];
-  await awaitAndClose(Promise.resolve(browser), browser, async (owned) => {
-    closed.push(owned);
-  });
+  await Promise.all([
+    awaitAndClose(Promise.resolve(browser), undefined, async (owned) => { closed.push(owned); }),
+    awaitAndClose(undefined, browser, async (owned) => { closed.push(owned); }),
+  ]);
   assert.deepEqual(closed, [browser]);
 });
 
