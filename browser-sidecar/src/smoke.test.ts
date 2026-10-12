@@ -48,7 +48,7 @@ test("protocol stop uses the lifecycle shutdown barrier", () => {
 test("failed browser initialization closes local ownership", () => {
   const initialization = source.slice(source.indexOf("const launchPromise"), source.indexOf("context.on(\"page\""));
   assert.ok(initialization.includes("browser = launchedBrowser"));
-  assert.ok(initialization.includes("await launchedBrowser.close().catch"));
+  assert.ok(initialization.includes("await awaitAndClose(undefined, launchedBrowser"));
 });
 
 test("expired commands are rejected before start claims the session", () => {
