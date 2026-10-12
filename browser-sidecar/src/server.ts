@@ -169,7 +169,17 @@ async function start(): Promise<PageSnapshot | undefined> {
         throw new Error("operation timeout");
       }
       const launchedContext = await launchedBrowser.newContext();
+      let acceptedPage: Page | undefined;
+      launchedContext.on("page", (newPage) => {
+        if (!acceptedPage) {
+          acceptedPage = newPage;
+          return;
+        }
+        void newPage.close();
+        process.stderr.write("Rejected unexpected additional browser tab\n");
+      });
       const launchedPage = await launchedContext.newPage();
+      acceptedPage = launchedPage;
       if (generation !== lifecycleGeneration || shuttingDown) {
         throw new Error("operation timeout");
       }
@@ -181,15 +191,11 @@ async function start(): Promise<PageSnapshot | undefined> {
         context = undefined;
         page = undefined;
       }
-      await launchedBrowser.close().catch(() => undefined);
+      await awaitAndClose(undefined, launchedBrowser, async (owned) => {
+        await owned.close();
+      });
       throw error;
     }
-    context.on("page", (extraPage) => {
-      if (extraPage !== page) {
-        void extraPage.close();
-        process.stderr.write("Rejected unexpected additional browser tab\n");
-      }
-    });
     browser.on("disconnected", () => {
       browser = undefined;
       context = undefined;
