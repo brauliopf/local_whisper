@@ -7,6 +7,7 @@ import {
   sanitizeURL,
   type PageSnapshot,
 } from "./redaction.js";
+import { awaitAndClose } from "./shutdown.js";
 
 const PROTOCOL_VERSION = 1;
 
@@ -277,11 +278,10 @@ input.on("line", (line) => {
 const shutdown = async (): Promise<void> => {
   shuttingDown = true;
   lifecycleGeneration += 1;
-  const pendingLaunch = launchInFlight;
-  const launchedBrowser = pendingLaunch ? await pendingLaunch.catch(() => undefined) : undefined;
   const ownedBrowser = browser;
-  await ownedBrowser?.close();
-  if (launchedBrowser && launchedBrowser !== ownedBrowser) await launchedBrowser.close().catch(() => undefined);
+  await awaitAndClose(launchInFlight, ownedBrowser, async (owned) => {
+    await owned.close();
+  });
   browser = undefined;
   context = undefined;
   page = undefined;
