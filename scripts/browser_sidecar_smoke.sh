@@ -8,7 +8,7 @@ fifo="$tmp_dir/input"
 output="$tmp_dir/output"
 mkfifo "$fifo"
 
-node "$sidecar_dir/dist/server.js" <"$fifo" >"$output" 2>"$tmp_dir/error" &
+PLAYWRIGHT_BROWSERS_PATH=0 node "$sidecar_dir/dist/server.js" <"$fifo" >"$output" 2>"$tmp_dir/error" &
 pid=$!
 exec 3>"$fifo"
 

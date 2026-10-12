@@ -13,8 +13,8 @@ const cardPattern = /\b(?:\d[ -]*?){13,19}\b/g;
 const bearerPattern = /\bBearer\s+[A-Za-z0-9._~+/=-]+/gi;
 const jwtPattern = /\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g;
 const labeledCodePattern = /\b(?:otp|one[-_ ]?time|verification|security)(?:\s+(?:code|number))?\s*[:=-]?\s*\d{4,8}\b/gi;
-const labeledIdentityPattern = /\b(?:username|user[-_ ]?name|email|e-mail)\s*[:=-]\s*\S+/gi;
-const labeledSecretPattern = /\b(?:password|passcode|secret|token|api[-_ ]?key|cvv|cvc|security code)\s*[:=-]\s*\S+/gi;
+const labeledIdentityPattern = /\b(?:username|user[-_ ]?name|email|e-mail)\s*[:=-]?\s*\S+/gi;
+const labeledSecretPattern = /\b(?:password|passcode|secret|token|api[-_ ]?key|cvv|cvc|security code)\s*[:=-]?\s+\S+/gi;
 
 export function isSensitiveControl(control: {
   type?: string | null;
@@ -53,8 +53,8 @@ export function redactControl(control: {
   return {
     tag: control.tag,
     type: control.type ?? undefined,
-    label: control.label ? redactText(control.label) : undefined,
-    name: control.name ? redactText(control.name) : undefined,
+    label: sensitive ? "[REDACTED]" : (control.label ? redactText(control.label) : undefined),
+    name: sensitive ? "[REDACTED]" : (control.name ? redactText(control.name) : undefined),
     value: sensitive ? "[REDACTED]" : redactText(control.value ?? ""),
   };
 }
@@ -69,7 +69,7 @@ export interface PageSnapshot {
 export function sanitizeURL(value: string): string {
   try {
     const url = new URL(value);
-    if (url.protocol === "about:") return url.toString();
+    if (url.protocol === "about:") return value.split(/[?#]/, 1)[0] === "about:blank" ? "about:blank" : "[REDACTED_URL]";
     if (url.protocol !== "http:" && url.protocol !== "https:") return "[REDACTED_URL]";
     const path = url.pathname === "/" ? "/" : "/[REDACTED_PATH]";
     return `${url.origin}${path}${url.search ? "?[REDACTED_QUERY]" : ""}`;

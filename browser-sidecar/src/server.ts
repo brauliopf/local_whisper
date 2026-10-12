@@ -38,6 +38,8 @@ let page: Page | undefined;
 let paused = false;
 let pauseGeneration = 0;
 let sessionID: string | undefined;
+let lifecycleGeneration = 0;
+let shuttingDown = false;
 
 function reply(command: Command, ok: boolean, state: SidecarState, error?: string): void {
   process.stdout.write(`${JSON.stringify({
@@ -50,6 +52,26 @@ function reply(command: Command, ok: boolean, state: SidecarState, error?: strin
   })}\n`);
 }
 
+function isCommand(value: unknown): value is Command {
+  if (!value || typeof value !== "object") return false;
+  const command = value as Record<string, unknown>;
+  return typeof command.id === "string"
+    && typeof command.version === "number"
+    && typeof command.session_id === "string"
+    && (command.deadline_ms === undefined || (typeof command.deadline_ms === "number" && Number.isFinite(command.deadline_ms)))
+    && ["start", "snapshot", "pause", "resume", "stop"].includes(command.type as string);
+}
+
+function invalidCommand(value: unknown): Command {
+  const command = value && typeof value === "object" ? value as Record<string, unknown> : {};
+  return {
+    id: typeof command.id === "string" ? command.id : "",
+    version: typeof command.version === "number" ? command.version : 0,
+    session_id: typeof command.session_id === "string" ? command.session_id : "",
+    type: "stop",
+  };
+}
+
 function errorCategory(error: unknown): string {
   const message = error instanceof Error ? error.message.toLowerCase() : "";
   if (message.includes("timeout")) return "operation_timeout";
@@ -57,7 +79,7 @@ function errorCategory(error: unknown): string {
   return "browser_operation_failed";
 }
 
-async function withDeadline<T>(deadline: number | undefined, operation: () => Promise<T>): Promise<T> {
+async function withDeadline<T>(deadline: number | undefined, operation: () => Promise<T>, onTimeout?: () => void): Promise<T> {
   if (deadline === undefined) return operation();
   const remaining = deadline - Date.now();
   if (remaining <= 0) throw new Error("operation timeout");
@@ -69,6 +91,9 @@ async function withDeadline<T>(deadline: number | undefined, operation: () => Pr
         timer = setTimeout(() => reject(new Error("operation timeout")), remaining);
       }),
     ]);
+  } catch (error) {
+    if (error instanceof Error && error.message === "operation timeout") onTimeout?.();
+    throw error;
   } finally {
     if (timer) clearTimeout(timer);
   }
@@ -123,10 +148,23 @@ async function snapshot(): Promise<PageSnapshot | undefined> {
 }
 
 async function start(): Promise<PageSnapshot | undefined> {
+  shuttingDown = false;
   if (!browser) {
-    browser = await chromium.launch({ headless: false });
-    context = await browser.newContext();
-    page = await context.newPage();
+    const generation = lifecycleGeneration;
+    const launchedBrowser = await chromium.launch({ headless: false });
+    if (generation !== lifecycleGeneration || shuttingDown) {
+      await launchedBrowser.close();
+      throw new Error("operation timeout");
+    }
+    const launchedContext = await launchedBrowser.newContext();
+    const launchedPage = await launchedContext.newPage();
+    if (generation !== lifecycleGeneration || shuttingDown) {
+      await launchedBrowser.close();
+      throw new Error("operation timeout");
+    }
+    browser = launchedBrowser;
+    context = launchedContext;
+    page = launchedPage;
     context.on("page", (extraPage) => {
       if (extraPage !== page) {
         void extraPage.close();
@@ -163,7 +201,7 @@ async function handle(command: Command): Promise<void> {
   try {
     switch (command.type) {
       case "start": {
-        const pageSnapshot = await withDeadline(command.deadline_ms, start);
+        const pageSnapshot = await withDeadline(command.deadline_ms, start, () => { lifecycleGeneration += 1; });
         reply(command, true, { status: "running", ...(pageSnapshot ? { snapshot: pageSnapshot } : {}) });
         return;
       }
@@ -172,7 +210,7 @@ async function handle(command: Command): Promise<void> {
           reply(command, true, { status: "paused" });
           return;
         }
-        const pageSnapshot = await withDeadline(command.deadline_ms, snapshot);
+        const pageSnapshot = await withDeadline(command.deadline_ms, snapshot, () => { lifecycleGeneration += 1; });
         reply(command, true, { status: pageSnapshot ? "running" : "paused", ...(pageSnapshot ? { snapshot: pageSnapshot } : {}) });
         return;
       }
@@ -184,11 +222,13 @@ async function handle(command: Command): Promise<void> {
       case "resume": {
         paused = false;
         pauseGeneration += 1;
-        const pageSnapshot = await withDeadline(command.deadline_ms, snapshot);
+        const pageSnapshot = await withDeadline(command.deadline_ms, snapshot, () => { lifecycleGeneration += 1; });
         reply(command, true, { status: "running", ...(pageSnapshot ? { snapshot: pageSnapshot } : {}) });
         return;
       }
       case "stop":
+        shuttingDown = true;
+        lifecycleGeneration += 1;
         await withDeadline(command.deadline_ms, async () => {
           await browser?.close();
         });
@@ -211,15 +251,28 @@ const input = createInterface({ input: process.stdin, crlfDelay: Infinity });
 let commandQueue = Promise.resolve();
 input.on("line", (line) => {
   try {
-    const command = JSON.parse(line) as Command;
-    commandQueue = commandQueue.then(() => handle(command)).catch(() => undefined);
+    const value: unknown = JSON.parse(line);
+    if (!isCommand(value)) {
+      reply(invalidCommand(value), false, { status: browser ? (paused ? "paused" : "running") : "idle" }, "protocol_invalid");
+      return;
+    }
+    commandQueue = commandQueue.then(() => handle(value)).catch(() => undefined);
   } catch {
     process.stderr.write("Invalid sidecar command\n");
   }
 });
+const shutdown = async (): Promise<void> => {
+  shuttingDown = true;
+  lifecycleGeneration += 1;
+  await browser?.close();
+  browser = undefined;
+  context = undefined;
+  page = undefined;
+};
+
 input.on("close", () => {
-  void browser?.close().finally(() => process.exit(0));
+  void shutdown().finally(() => process.exit(0));
 });
 
-process.on("SIGTERM", () => void browser?.close().finally(() => process.exit(0)));
-process.on("SIGINT", () => void browser?.close().finally(() => process.exit(0)));
+process.on("SIGTERM", () => void shutdown().finally(() => process.exit(0)));
+process.on("SIGINT", () => void shutdown().finally(() => process.exit(0)));

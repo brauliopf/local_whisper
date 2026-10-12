@@ -4,7 +4,7 @@ import { isSensitiveControl, redactControl, redactText, sanitizeURL } from "./re
 
 test("redacts credentials and payment-like text", () => {
   const text = "Email me@example.com and use 4111 1111 1111 1111";
-  assert.equal(redactText(text), "Email [REDACTED_EMAIL] and use [REDACTED_PAYMENT]");
+  assert.equal(redactText(text), "[REDACTED_IDENTITY] and use [REDACTED_PAYMENT]");
 });
 
 test("identifies sensitive controls from semantics", () => {
@@ -23,6 +23,8 @@ test("sanitizes URLs without exposing query values", () => {
   assert.equal(sanitizeURL("https://example.test/path?token=secret#private"), "https://example.test/[REDACTED_PATH]?[REDACTED_QUERY]");
   assert.equal(sanitizeURL("https://example.test/session/very-long-secret-token-value"), "https://example.test/[REDACTED_PATH]");
   assert.equal(sanitizeURL("javascript:alert(1)"), "[REDACTED_URL]");
+  assert.equal(sanitizeURL("about:blank#private"), "about:blank");
+  assert.equal(sanitizeURL("about:srcdoc"), "[REDACTED_URL]");
 });
 
 test("preserves safe control values and hides sensitive values", () => {
@@ -30,8 +32,8 @@ test("preserves safe control values and hides sensitive values", () => {
     redactControl({ tag: "input", type: "text", label: "Search", value: "Portland" }).value,
     "Portland",
   );
-  assert.equal(
-    redactControl({ tag: "input", type: "password", label: "Password", value: "secret" }).value,
-    "[REDACTED]",
-  );
+  const sensitive = redactControl({ tag: "input", type: "password", name: "hunter2", label: "Password hunter2", value: "secret" });
+  assert.equal(sensitive.value, "[REDACTED]");
+  assert.equal(sensitive.label, "[REDACTED]");
+  assert.equal(sensitive.name, "[REDACTED]");
 });
