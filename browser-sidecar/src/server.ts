@@ -152,6 +152,9 @@ async function start(): Promise<PageSnapshot | undefined> {
   if (!browser) {
     const generation = lifecycleGeneration;
     const launchedBrowser = await chromium.launch({ headless: false });
+    // Publish ownership immediately so EOF/signal shutdown can close a browser
+    // while context/page initialization is still in flight.
+    browser = launchedBrowser;
     try {
       if (generation !== lifecycleGeneration || shuttingDown) {
         throw new Error("operation timeout");
@@ -161,10 +164,14 @@ async function start(): Promise<PageSnapshot | undefined> {
       if (generation !== lifecycleGeneration || shuttingDown) {
         throw new Error("operation timeout");
       }
-      browser = launchedBrowser;
       context = launchedContext;
       page = launchedPage;
     } catch (error) {
+      if (browser === launchedBrowser) {
+        browser = undefined;
+        context = undefined;
+        page = undefined;
+      }
       await launchedBrowser.close().catch(() => undefined);
       throw error;
     }
