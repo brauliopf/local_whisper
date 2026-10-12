@@ -1,5 +1,10 @@
 import { createInterface } from "node:readline";
 import { chromium, type Browser, type BrowserContext, type Page } from "playwright";
+import {
+  redactControl,
+  redactText,
+  type PageSnapshot,
+} from "./redaction.js";
 
 type Command =
   | { id: string; type: "start" }
@@ -8,9 +13,13 @@ type Command =
   | { id: string; type: "resume" }
   | { id: string; type: "stop" };
 
-interface PageSnapshot {
-  url: string;
-  title: string;
+interface ControlData {
+  tag: string;
+  type: string | null;
+  name: string | null;
+  autocomplete: string | null;
+  label: string | null;
+  value: string | null;
 }
 
 interface SidecarState {
@@ -29,7 +38,45 @@ function reply(id: string, ok: boolean, state: SidecarState, error?: string): vo
 
 async function snapshot(): Promise<PageSnapshot> {
   if (!page) throw new Error("Browser tab is not running");
-  return { url: page.url(), title: await page.title() };
+
+  const data = await page.evaluate(() => {
+    const labelFor = (element: Element): string | null => {
+      if (!(element instanceof HTMLElement)) return null;
+      const id = element.getAttribute("id");
+      if (id) {
+        const label = document.querySelector(`label[for="${CSS.escape(id)}"]`);
+        if (label?.textContent) return label.textContent.trim();
+      }
+      return element.getAttribute("aria-label") ?? element.getAttribute("placeholder");
+    };
+
+    const controls: ControlData[] = Array.from(
+      document.querySelectorAll("input, textarea, select, button"),
+    ).map((element) => ({
+      tag: element.tagName.toLowerCase(),
+      type: element.getAttribute("type"),
+      name: element.getAttribute("name"),
+      autocomplete: element.getAttribute("autocomplete"),
+      label: labelFor(element),
+      value: element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement
+        ? element.value
+        : element.textContent?.trim() ?? "",
+    }));
+
+    return {
+      url: location.href,
+      title: document.title,
+      visibleText: document.body?.innerText ?? "",
+      controls,
+    };
+  });
+
+  return {
+    url: data.url,
+    title: redactText(data.title),
+    visibleText: redactText(data.visibleText),
+    controls: data.controls.map(redactControl),
+  };
 }
 
 async function start(): Promise<PageSnapshot> {

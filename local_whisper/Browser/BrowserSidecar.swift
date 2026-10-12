@@ -1,8 +1,18 @@
 import Foundation
 
+struct BrowserControl: Codable, Sendable {
+    let tag: String
+    let type: String?
+    let label: String?
+    let name: String?
+    let value: String
+}
+
 struct BrowserPageSnapshot: Codable, Sendable {
     let url: String
     let title: String
+    let visibleText: String
+    let controls: [BrowserControl]
 }
 
 enum BrowserSidecarStatus: String, Codable, Sendable {
