@@ -5,7 +5,8 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "start": "node dist/server.js",
-    "test": "npm run build && node --test dist/*.test.js"
+    "test": "npm run build && node --test dist/*.test.js",
+    "smoke": "npm run build && ../scripts/browser_sidecar_smoke.sh"
   },
   "dependencies": {
     "playwright": "^1.55.0"
