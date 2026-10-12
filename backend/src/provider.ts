@@ -196,6 +196,25 @@ export class OpenAIImageTextProvider implements BackendProvider, BrowserPlanner 
           model: this.browserPlannerModel,
           instructions: browserPlannerPrompt,
           input: JSON.stringify(request),
+          text: {
+            format: {
+              type: "json_schema",
+              name: "browser_plan",
+              strict: true,
+              schema: {
+                type: "object",
+                additionalProperties: false,
+                properties: {
+                  code: { type: "string" },
+                  plan_id: { type: "string" },
+                  policy_version: { type: "string" },
+                  state_hash: { type: "string" },
+                  expires_at: { type: "string" },
+                },
+                required: ["code", "plan_id", "policy_version", "state_hash", "expires_at"],
+              },
+            },
+          },
         },
         { signal },
       );
