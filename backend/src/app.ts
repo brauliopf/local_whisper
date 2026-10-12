@@ -16,6 +16,8 @@ import { FixedWindowRateLimiter } from "./rate-limit.js";
 import type {
   AudioMediaType,
   BackendProvider,
+  BrowserPlanRequest,
+  BrowserPlanner,
   ImageMediaType,
 } from "./provider.js";
 import type { TranscriptionWorkflow } from "./transcription.js";
@@ -27,6 +29,7 @@ const m4aContainerHeader = Buffer.from("ftyp");
 export interface AppDependencies {
   config: AppConfig;
   provider: BackendProvider;
+  planner: BrowserPlanner;
   transcriptionWorkflow: TranscriptionWorkflow;
 }
 
@@ -105,6 +108,33 @@ interface ImageUpload {
 interface AudioUpload {
   data: Buffer;
   mediaType: AudioMediaType;
+}
+
+function browserPlanRequest(body: unknown): BrowserPlanRequest {
+  if (typeof body !== "object" || body === null || Array.isArray(body)) {
+    throw new ApiError(400, "invalid_input", "The browser plan request is invalid.");
+  }
+  const value = body as Record<string, unknown>;
+  const { goal, page_state: pageState, capability_policy: capabilityPolicy, policy_version: policyVersion, session_id: sessionID } = value;
+  if (
+    typeof goal !== "string" || goal.trim().length === 0 || goal.length > 4_000 ||
+    typeof pageState !== "object" || pageState === null || Array.isArray(pageState) ||
+    typeof capabilityPolicy !== "object" || capabilityPolicy === null || Array.isArray(capabilityPolicy) ||
+    typeof policyVersion !== "string" || policyVersion.length === 0 || policyVersion.length > 128 ||
+    typeof sessionID !== "string" || sessionID.length === 0 || sessionID.length > 256
+  ) {
+    throw new ApiError(400, "invalid_input", "The browser plan request is invalid.");
+  }
+  if (JSON.stringify(pageState).length > 1_000_000) {
+    throw new ApiError(413, "file_too_large", "The browser page state is too large.");
+  }
+  return {
+    goal: goal.trim(),
+    pageState: pageState as Record<string, unknown>,
+    capabilityPolicy: capabilityPolicy as Record<string, unknown>,
+    policyVersion,
+    sessionID,
+  };
 }
 
 async function readImage(request: FastifyRequest, config: AppConfig): Promise<ImageUpload> {
@@ -271,6 +301,7 @@ async function runWithDeadline<T>(
 export async function buildApp({
   config,
   provider,
+  planner,
   transcriptionWorkflow,
 }: AppDependencies): Promise<FastifyInstance> {
   const expectedTokenDigest = createHash("sha256").update(config.serviceToken).digest();
@@ -305,7 +336,7 @@ export async function buildApp({
     }
     if (
       request.method === "POST" &&
-      ["/image-text", "/encouragements", "/transcriptions"].includes(request.url.split("?", 1)[0])
+      ["/image-text", "/encouragements", "/transcriptions", "/browser-plans"].includes(request.url.split("?", 1)[0])
     ) {
       if (!rateLimiter.allow()) {
         const retryAfterSeconds = rateLimiter.retryAfterSeconds();
@@ -326,6 +357,26 @@ export async function buildApp({
       typesafe: { configured: Boolean(config.typesafeAPIKey) },
     },
   }));
+
+  app.post("/browser-plans", async (request, reply) => {
+    const planRequest = browserPlanRequest(request.body);
+    const plan = await runWithDeadline(
+      request,
+      (signal) => planner.generateBrowserPlan(planRequest, signal),
+      config,
+    );
+    if (plan === undefined || reply.raw.destroyed) {
+      return;
+    }
+    return {
+      code: plan.code,
+      plan_id: plan.planID,
+      policy_version: plan.policyVersion,
+      state_hash: plan.stateHash,
+      expires_at: plan.expiresAt,
+      request_id: request.id,
+    };
+  });
 
   app.post("/image-text", async (request, reply) => {
     const image = await readImage(request, config);
