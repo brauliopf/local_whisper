@@ -21,6 +21,7 @@ import type {
   ImageMediaType,
 } from "./provider.js";
 import type { TranscriptionWorkflow } from "./transcription.js";
+import type { BrowserSafetyReviewer } from "./typesafe.js";
 
 const jpegHeader = Buffer.from([0xff, 0xd8, 0xff]);
 const pngHeader = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
@@ -30,6 +31,7 @@ export interface AppDependencies {
   config: AppConfig;
   provider: BackendProvider;
   planner: BrowserPlanner;
+  browserSafetyReviewer?: BrowserSafetyReviewer;
   transcriptionWorkflow: TranscriptionWorkflow;
 }
 
@@ -135,6 +137,35 @@ function browserPlanRequest(body: unknown): BrowserPlanRequest {
     policyVersion,
     sessionID,
   };
+}
+
+function normalizeBrowserCode(code: string): string {
+  const scrollPattern = /await\s+page\.evaluate\(\s*(?:async\s*)?\(\)\s*=>\s*\{\s*window\.scrollTo\(\s*0\s*,\s*document\.body\.scrollHeight\s*\)\s*;?\s*\}\s*\)\s*;?/g;
+  return code
+    .replace(scrollPattern, "await page.mouse.wheel(0, 10000);")
+    .split("\n")
+    .filter((line) => ![
+      "require('playwright')",
+      "require(\"playwright\")",
+      "chromium.launch",
+      "newContext(",
+      "context.newPage",
+      "browser.close",
+      "context.close",
+    ].some((fragment) => line.includes(fragment)))
+    .join("\n")
+    .trim();
+}
+
+function plannerSafetyViolations(code: string): string[] {
+  const violations: string[] = [];
+  if (/\b(?:browser|context|process|require|import|eval|Function|page\.close|context\.close|browser\.close)\b/.test(code)) {
+    violations.push("forbidden_runtime_or_shutdown_api");
+  }
+  if (/\b(?:password|otp|token|secret|cookie|storageState|localStorage|sessionStorage)\b/i.test(code)) {
+    violations.push("sensitive_data_access");
+  }
+  return violations;
 }
 
 async function readImage(request: FastifyRequest, config: AppConfig): Promise<ImageUpload> {
@@ -302,6 +333,7 @@ export async function buildApp({
   config,
   provider,
   planner,
+  browserSafetyReviewer,
   transcriptionWorkflow,
 }: AppDependencies): Promise<FastifyInstance> {
   const expectedTokenDigest = createHash("sha256").update(config.serviceToken).digest();
@@ -368,12 +400,40 @@ export async function buildApp({
     if (plan === undefined || reply.raw.destroyed) {
       return;
     }
+    const normalizedCode = normalizeBrowserCode(plan.code);
+    let safetyReview: "approved" | "rejected" | "unavailable" = "unavailable";
+    const deterministicViolations = plannerSafetyViolations(normalizedCode);
+    if (deterministicViolations.length > 0) {
+      request.log.info({ requestId: request.id, violations: deterministicViolations }, "browser_deterministic_rejection");
+      safetyReview = "rejected";
+    } else if (browserSafetyReviewer) {
+      const review = await runWithDeadline(
+        request,
+        (signal) => browserSafetyReviewer.reviewBrowserPlan({
+          goal: planRequest.goal,
+          code: normalizedCode,
+          capabilityPolicy: planRequest.capabilityPolicy,
+          deterministicViolations,
+          deterministicPassed: true,
+          redactedPageState: planRequest.pageState,
+        }, signal),
+        config,
+      );
+      if (review) {
+        request.log.info({ requestId: request.id, checks: review.checks }, "browser_safety_review");
+      }
+      safetyReview = review?.approved ? "approved" : "rejected";
+    }
+    if (safetyReview === "rejected") {
+      throw new ApiError(422, "invalid_input", "The browser plan did not pass safety review.");
+    }
     return {
-      code: plan.code,
+      code: normalizedCode,
       plan_id: plan.planID,
       policy_version: plan.policyVersion,
       state_hash: plan.stateHash,
       expires_at: plan.expiresAt,
+      safety_review: safetyReview,
       request_id: request.id,
     };
   });
