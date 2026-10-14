@@ -36,6 +36,7 @@ nonisolated struct BackendBrowserPlanResponse: Decodable, Sendable {
     let policyVersion: String
     let stateHash: String
     let expiresAt: String
+    let safetyReview: String?
     let requestID: String
 
     enum CodingKeys: String, CodingKey {
@@ -44,6 +45,7 @@ nonisolated struct BackendBrowserPlanResponse: Decodable, Sendable {
         case policyVersion = "policy_version"
         case stateHash = "state_hash"
         case expiresAt = "expires_at"
+        case safetyReview = "safety_review"
         case requestID = "request_id"
     }
 }
