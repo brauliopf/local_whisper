@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { createInterface } from "node:readline";
+import vm from "node:vm";
 import { chromium, type Browser, type BrowserContext, type Page } from "playwright";
 import {
   redactControl,
@@ -8,6 +9,7 @@ import {
   type PageSnapshot,
 } from "./redaction.js";
 import { awaitAndClose } from "./shutdown.js";
+import { validateBrowserCode } from "./validator.js";
 
 const PROTOCOL_VERSION = 1;
 
@@ -16,7 +18,10 @@ type Command = {
   version: number;
   session_id: string;
   deadline_ms?: number;
-  type: "start" | "snapshot" | "pause" | "resume" | "stop";
+  type: "start" | "snapshot" | "pause" | "resume" | "stop" | "execute";
+  code?: string;
+  code_hash?: string;
+  state_hash?: string;
 };
 
 interface ControlData {
@@ -61,7 +66,8 @@ function isCommand(value: unknown): value is Command {
     && typeof command.version === "number"
     && typeof command.session_id === "string"
     && (command.deadline_ms === undefined || (typeof command.deadline_ms === "number" && Number.isFinite(command.deadline_ms)))
-    && ["start", "snapshot", "pause", "resume", "stop"].includes(command.type as string);
+    && ["start", "snapshot", "pause", "resume", "stop", "execute"].includes(command.type as string)
+    && (command.type !== "execute" || (typeof command.code === "string" && typeof command.code_hash === "string" && typeof command.state_hash === "string"));
 }
 
 function invalidCommand(value: unknown): Command {
@@ -77,6 +83,9 @@ function invalidCommand(value: unknown): Command {
 function errorCategory(error: unknown): string {
   const message = error instanceof Error ? error.message.toLowerCase() : "";
   if (message.includes("timeout")) return "operation_timeout";
+  if (message.includes("code hash")) return "code_hash_mismatch";
+  if (message.includes("stale browser state")) return "stale_browser_state";
+  if (message.includes("policy violation")) return "policy_violation";
   if (message.includes("launch") || message.includes("executable")) return "browser_unavailable";
   return "browser_operation_failed";
 }
@@ -208,6 +217,19 @@ async function start(): Promise<PageSnapshot | undefined> {
   return snapshot();
 }
 
+async function execute(code: string, expectedStateHash: string, expectedCodeHash: string): Promise<PageSnapshot | undefined> {
+  if (!page) throw new Error("Browser tab is not running");
+  const actualCodeHash = createHash("sha256").update(code).digest("hex");
+  if (actualCodeHash !== expectedCodeHash) throw new Error("code hash mismatch");
+  const validation = validateBrowserCode(code);
+  if (!validation.valid) throw new Error(`policy violation: ${validation.violations.map((item) => item.category).join(",")}`);
+  const before = await snapshot();
+  if (!before || before.stateHash !== expectedStateHash) throw new Error("stale browser state");
+  const script = new vm.Script(`(async () => {\n${code}\n})()`);
+  await script.runInNewContext({ page }, { timeout: 30_000 });
+  return snapshot();
+}
+
 async function handle(command: Command): Promise<void> {
   if (command.version !== PROTOCOL_VERSION || !command.session_id) {
     reply(command, false, { status: "idle" }, "protocol_invalid");
@@ -251,7 +273,16 @@ async function handle(command: Command): Promise<void> {
         reply(command, true, { status: "running", ...(pageSnapshot ? { snapshot: pageSnapshot } : {}) });
         return;
       }
-      case "stop":
+      case "execute": {
+        const pageSnapshot = await withDeadline(
+          command.deadline_ms,
+          () => execute(command.code!, command.state_hash!, command.code_hash!),
+          () => { lifecycleGeneration += 1; },
+        );
+        reply(command, true, { status: "running", ...(pageSnapshot ? { snapshot: pageSnapshot } : {}) });
+        return;
+      }
+      case "stop": {
         // Stop is a lifecycle barrier: cleanup must await an in-flight launch,
         // even if the original start request already timed out.
         await shutdown();
@@ -261,6 +292,7 @@ async function handle(command: Command): Promise<void> {
         reply(command, true, { status: "stopped" });
         setImmediate(() => process.exit(0));
         return;
+      }
     }
   } catch (error) {
     reply(command, false, { status: browser ? (paused ? "paused" : "running") : "idle" }, errorCategory(error));

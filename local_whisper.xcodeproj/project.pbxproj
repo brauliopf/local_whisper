@@ -174,13 +174,17 @@
 				"$(PROJECT_DIR)/browser-sidecar/package.json",
 				"$(PROJECT_DIR)/browser-sidecar/package-lock.json",
 				"$(PROJECT_DIR)/browser-sidecar/tsconfig.json",
-				"$(PROJECT_DIR)/browser-sidecar/src",
+				"$(PROJECT_DIR)/browser-sidecar/src/redaction.ts",
+				"$(PROJECT_DIR)/browser-sidecar/src/server.ts",
+				"$(PROJECT_DIR)/browser-sidecar/src/shutdown.ts",
+				"$(PROJECT_DIR)/browser-sidecar/src/validator.ts",
 				"$(PROJECT_DIR)/browser-sidecar/bin/browser-sidecar",
 				"$(PROJECT_DIR)/browser-sidecar/node_modules",
 			);
 			name = "Build browser sidecar";
 			outputPaths = (
 				"$(TARGET_BUILD_DIR)/$(CONTENTS_FOLDER_PATH)/Resources/browser-sidecar",
+				"$(TARGET_BUILD_DIR)/$(CONTENTS_FOLDER_PATH)/Resources/browser-sidecar-runtime/dist/server.js",
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;

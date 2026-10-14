@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import OSLog
 
@@ -30,7 +31,7 @@ final class BrowserSession {
     private static let policyVersion = "browser-navigation-v1"
     private static let capabilityPolicy: [String: Any] = [
         "version": policyVersion,
-        "allowed_actions": ["navigate", "click", "select", "type_non_sensitive"],
+        "allowed_actions": ["navigate", "click", "select", "type_non_sensitive", "scroll"],
         "single_tab": true,
     ]
 
@@ -160,7 +161,21 @@ final class BrowserSession {
                     }
                     logger.info("browser step=plan_response status=received request_id=\(response.requestID, privacy: .public)")
                     onPlan?(trimmedGoal, response)
-                    toast.show(message: "Browser plan ready for preview.", isError: false)
+                    if response.safetyReview != "approved" {
+                        let alert = NSAlert()
+                        alert.messageText = "Safety review unavailable"
+                        alert.informativeText = "TypeSafe could not review this browser plan. Execute it after deterministic checks only?"
+                        alert.addButton(withTitle: "Execute")
+                        alert.addButton(withTitle: "Cancel")
+                        guard alert.runModal() == .alertFirstButtonReturn else { return }
+                    }
+                    do {
+                        try writePlanFile(goal: trimmedGoal, response: response)
+                    } catch {
+                        logger.error("browser step=plan_file status=failed category=storage_error")
+                    }
+                    try sidecar.execute(code: response.code, stateHash: response.stateHash)
+                    toast.show(message: "Executing browser plan…", isError: false, autoDismiss: false)
                 } catch is CancellationError {
                     return
                 } catch {
@@ -171,6 +186,30 @@ final class BrowserSession {
         } catch {
             toast.show(message: "Couldn't prepare the browser snapshot.", isError: true)
         }
+    }
+
+    private func writePlanFile(goal: String, response: BackendBrowserPlanResponse) throws {
+        let directory = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".runs", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let formatter = ISO8601DateFormatter()
+        let filename = "\(formatter.string(from: Date()).replacingOccurrences(of: ":", with: "-")).md"
+        let contents = """
+        # Browser plan
+
+        - Goal: \(goal)
+        - Plan ID: \(response.planID)
+        - Policy version: \(response.policyVersion)
+        - State hash: \(response.stateHash)
+        - Expires at: \(response.expiresAt)
+
+        ## Generated Playwright code
+
+        ```javascript
+        \(response.code)
+        ```
+        """
+        try contents.write(to: directory.appendingPathComponent(filename), atomically: true, encoding: .utf8)
     }
 
     func requestSnapshot() {
