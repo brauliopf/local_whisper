@@ -16,14 +16,34 @@ final class BrowserSession {
 
     private(set) var state: State = .idle
     private(set) var snapshot: BrowserPageSnapshot?
+    var onPlan: ((String, BackendBrowserPlanResponse) -> Void)?
+    var onReadyForGoal: (() -> Void)?
 
     private let toast: ToastPresenter
     private let sidecar: BrowserSidecar
+    private let backend: any BackendClienting
+    private let keychain: any Keychaining
     private let logger = Logger(subsystem: "brauliopf.local-whisper", category: "browser")
+    private var planningSessionID: String?
+    private var captureGoalWhenReady = false
 
-    init(toast: ToastPresenter, sidecar: BrowserSidecar) {
+    private static let policyVersion = "browser-navigation-v1"
+    private static let capabilityPolicy: [String: Any] = [
+        "version": policyVersion,
+        "allowed_actions": ["navigate", "click", "select", "type_non_sensitive"],
+        "single_tab": true,
+    ]
+
+    init(
+        toast: ToastPresenter,
+        sidecar: BrowserSidecar,
+        backend: any BackendClienting,
+        keychain: any Keychaining
+    ) {
         self.toast = toast
         self.sidecar = sidecar
+        self.backend = backend
+        self.keychain = keychain
         sidecar.onResponse = { [weak self] response in
             self?.handle(response)
         }
@@ -53,6 +73,8 @@ final class BrowserSession {
         }
 
         state = .launching
+        planningSessionID = UUID().uuidString
+        captureGoalWhenReady = true
         logger.info("browser step=command_received status=accepted")
         do {
             try sidecar.start()
@@ -60,6 +82,7 @@ final class BrowserSession {
             toast.show(message: "Browser ready.", isError: false)
         } catch {
             state = .stopped
+            captureGoalWhenReady = false
             toast.show(message: error.localizedDescription, isError: true)
             logger.error("browser step=launch status=failed category=helper_unavailable")
         }
@@ -92,7 +115,62 @@ final class BrowserSession {
         sidecar.stop()
         state = .stopped
         snapshot = nil
+        planningSessionID = nil
+        captureGoalWhenReady = false
         logger.info("browser step=stop status=ok")
+    }
+
+    func requestPlan(for goal: String) {
+        guard state == .running, let snapshot, let sessionID = planningSessionID else {
+            toast.show(message: "Start the browser before creating a plan.", isError: true)
+            return
+        }
+        let trimmedGoal = goal.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedGoal.isEmpty else {
+            toast.show(message: "Tell me what you want the browser to do.", isError: true)
+            return
+        }
+        guard let serviceToken = keychain.loadServiceToken(), !serviceToken.isEmpty else {
+            toast.show(message: "Add the backend service token in Settings.", isError: true)
+            return
+        }
+
+        do {
+            let encoder = JSONEncoder()
+            let pageState = try encoder.encode(snapshot)
+            let capabilityPolicy = try JSONSerialization.data(withJSONObject: Self.capabilityPolicy)
+            toast.show(message: "Creating browser plan…", isError: false, autoDismiss: false)
+            logger.info("browser step=plan_request status=sent")
+            Task { [weak self] in
+                guard let self else { return }
+                do {
+                    let response = try await backend.requestBrowserPlan(
+                        goal: trimmedGoal,
+                        pageStateJSON: pageState,
+                        capabilityPolicyJSON: capabilityPolicy,
+                        policyVersion: Self.policyVersion,
+                        sessionID: sessionID,
+                        serviceToken: serviceToken
+                    )
+                    guard response.policyVersion == Self.policyVersion,
+                          response.stateHash == snapshot.stateHash,
+                          !response.code.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                          !response.planID.isEmpty else {
+                        throw BackendError.invalidResponse
+                    }
+                    logger.info("browser step=plan_response status=received request_id=\(response.requestID, privacy: .public)")
+                    onPlan?(trimmedGoal, response)
+                    toast.show(message: "Browser plan ready for preview.", isError: false)
+                } catch is CancellationError {
+                    return
+                } catch {
+                    logger.error("browser step=plan_request status=failed category=backend_error")
+                    toast.show(message: error.localizedDescription, isError: true)
+                }
+            }
+        } catch {
+            toast.show(message: "Couldn't prepare the browser snapshot.", isError: true)
+        }
     }
 
     func requestSnapshot() {
@@ -119,6 +197,10 @@ final class BrowserSession {
             state = .idle
         case .running:
             state = .running
+            if captureGoalWhenReady {
+                captureGoalWhenReady = false
+                onReadyForGoal?()
+            }
         case .paused:
             state = .pausedForUser
         case .stopped:

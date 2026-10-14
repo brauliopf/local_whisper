@@ -7,132 +7,51 @@ final class VoiceTranscription {
     var setEscapeEnabled: ((Bool) -> Void)?
 
     private let backend: any BackendClienting
-    private let keychain: any Keychaining
+    private let tokenState: ServiceTokenState
     private let toast: ToastPresenter
-    private let recorder = AudioRecorder()
+    private let capture: VoiceCapture
     private var transcribeTask: Task<Void, Never>?
-    private var maxDurationTask: Task<Void, Never>?
-    private var isRecording = false
-    private var isTranscribing = false
-    private var isStartingRecording = false
-
-    private static let minimumRecordingDuration: TimeInterval = 0.5
 
     init(
         backend: any BackendClienting,
-        keychain: any Keychaining,
+        tokenState: ServiceTokenState,
         toast: ToastPresenter
     ) {
         self.backend = backend
-        self.keychain = keychain
+        self.tokenState = tokenState
         self.toast = toast
+        self.capture = VoiceCapture(toast: toast)
+        capture.onRecordingStateChanged = { [weak self] recording in
+            self?.setEscapeEnabled?(recording)
+        }
+        capture.onRecordingFinished = { [weak self] url in
+            self?.transcribe(url: url)
+        }
     }
 
     func cancelInFlightWork() {
         transcribeTask?.cancel()
-        isTranscribing = false
+        transcribeTask = nil
     }
 
     func toggle() {
-        if isRecording {
-            finishAndTranscribe()
-            return
-        }
-        if isTranscribing || isStartingRecording { return }
-        startRecording()
+        capture.toggle(prompt: "Recording… press ⌃⌥W to stop")
     }
 
     func cancelRecording(showToast: Bool = true) {
-        guard isRecording else { return }
-        isRecording = false
-        setEscapeEnabled?(false)
-        maxDurationTask?.cancel()
-        maxDurationTask = nil
-        recorder.cancel()
-        if showToast {
-            toast.show(message: "Recording cancelled", isError: false)
-        }
+        capture.cancel(showToast: showToast)
     }
 
-    private func startRecording() {
-        guard keychain.hasServiceToken else {
-            openSettings?()
-            return
-        }
-
-        isStartingRecording = true
-
-        Task {
-            defer { isStartingRecording = false }
-
-            let allowed = await recorder.hasMicrophoneAccess()
-            guard allowed else {
-                toast.show(message: "Microphone access is required.", isError: true)
-                return
-            }
-
-            do {
-                try recorder.start()
-            } catch {
-                toast.show(message: error.localizedDescription, isError: true)
-                return
-            }
-
-            isRecording = true
-            setEscapeEnabled?(true)
-            toast.show(
-                message: "Recording… press ⌃⌥W to stop",
-                isError: false,
-                autoDismiss: false
-            )
-
-            maxDurationTask?.cancel()
-            maxDurationTask = Task {
-                try? await Task.sleep(for: .seconds(120))
-                guard !Task.isCancelled else { return }
-                finishAndTranscribe()
-            }
-        }
-    }
-
-    private func finishAndTranscribe() {
-        guard isRecording else { return }
-        isRecording = false
-        setEscapeEnabled?(false)
-        maxDurationTask?.cancel()
-        maxDurationTask = nil
-
-        let url = recorder.stop()
-        let duration = recorder.duration
-
-        guard let url else {
-            toast.show(message: "Couldn't start recording.", isError: true)
-            return
-        }
-
-        guard duration >= Self.minimumRecordingDuration else {
-            try? FileManager.default.removeItem(at: url)
-            toast.show(message: "Nothing to transcribe", isError: false)
-            return
-        }
-
-        isTranscribing = true
+    private func transcribe(url: URL) {
         toast.show(message: "Making magic…", isError: false, autoDismiss: false)
-
         transcribeTask = Task {
-            defer {
-                isTranscribing = false
-                try? FileManager.default.removeItem(at: url)
-            }
+            defer { try? FileManager.default.removeItem(at: url) }
             await Telemetry.instrument(operation: "audio_transcription", trigger: "hotkey") {
                 do {
-                    guard let serviceToken = keychain.loadServiceToken(), !serviceToken.isEmpty else {
+                    guard let serviceToken = tokenState.token, !serviceToken.isEmpty else {
                         throw BackendError.missingServiceToken
                     }
-                    let text = try await backend.transcribeAudio(
-                        at: url,
-                        serviceToken: serviceToken
-                    )
+                    let text = try await backend.transcribeAudio(at: url, serviceToken: serviceToken)
                     guard !Task.isCancelled else { return }
                     guard !text.isEmpty else {
                         toast.show(message: "No speech detected.", isError: false)
@@ -142,11 +61,12 @@ final class VoiceTranscription {
                     toast.show(message: "Copied to clipboard", isError: false)
                 } catch {
                     guard !Task.isCancelled else { return }
+                    if case BackendError.missingServiceToken = error {
+                        openSettings?()
+                    }
                     toast.show(message: error.localizedDescription, isError: true)
-                    throw error
                 }
             }
         }
     }
-
 }
