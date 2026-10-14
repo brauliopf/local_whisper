@@ -176,6 +176,7 @@ test("returns a schema-validated browser plan", async () => {
       policy_version: "browser-policy-v1",
       state_hash: "test-state",
       expires_at: "2099-01-01T00:00:00.000Z",
+      safety_review: "unavailable",
       request_id: String(response.headers["x-request-id"]),
     });
   } finally {

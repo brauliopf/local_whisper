@@ -3,7 +3,7 @@ import { buildApp } from "./app.js";
 import { loadConfig } from "./config.js";
 import { createOpenAIImageTextProvider } from "./provider.js";
 import { TranscriptionWorkflow } from "./transcription.js";
-import { createTypeSafeLanguageClassifier } from "./typesafe.js";
+import { createTypeSafeBrowserSafetyReviewer, createTypeSafeLanguageClassifier } from "./typesafe.js";
 
 const config = loadConfig();
 const provider = createOpenAIImageTextProvider(
@@ -30,6 +30,9 @@ const app = await buildApp({
   config,
   provider,
   planner: provider,
+  browserSafetyReviewer: config.typesafeAPIKey
+    ? createTypeSafeBrowserSafetyReviewer(config.typesafeAPIKey, config.typesafeModel)
+    : undefined,
   transcriptionWorkflow,
 });
 
