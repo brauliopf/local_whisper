@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { createInterface } from "node:readline";
+import { lookup } from "node:dns/promises";
 import vm from "node:vm";
 import { chromium, type Browser, type BrowserContext, type Page } from "playwright";
 import {
@@ -182,10 +183,27 @@ async function start(): Promise<PageSnapshot | undefined> {
       }
       const launchedContext = await launchedBrowser.newContext();
       await launchedContext.route("**/*", async (route) => {
-        const url = route.request().url();
-        if (url === "about:blank" || isSafeBrowserURL(url)) {
+        const rawURL = route.request().url();
+        if (rawURL === "about:blank") {
           await route.continue();
-        } else {
+          return;
+        }
+        try {
+          const url = new URL(rawURL);
+          if (!isSafeBrowserURL(rawURL)) {
+            await route.abort("blockedbyclient");
+            return;
+          }
+          const addresses = await lookup(url.hostname, { all: true, verbatim: true });
+          if (addresses.length === 0 || addresses.some(({ address }) => {
+            const host = address.includes(":") ? `[${address}]` : address;
+            return !isSafeBrowserURL(`${url.protocol}//${host}`);
+          })) {
+            await route.abort("blockedbyclient");
+            return;
+          }
+          await route.continue();
+        } catch {
           await route.abort("blockedbyclient");
         }
       });

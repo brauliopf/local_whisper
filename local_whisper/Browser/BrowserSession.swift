@@ -26,6 +26,7 @@ final class BrowserSession {
     private let logger = Logger(subsystem: "brauliopf.local-whisper", category: "browser")
     private var planningSessionID: String?
     private var planningTask: Task<Void, Never>?
+    private var planningGeneration = UUID()
     private var captureGoalWhenReady = false
 
     private static let policyVersion = "browser-navigation-v1"
@@ -118,6 +119,7 @@ final class BrowserSession {
         snapshot = nil
         planningTask?.cancel()
         planningTask = nil
+        planningGeneration = UUID()
         planningSessionID = nil
         captureGoalWhenReady = false
         logger.info("browser step=stop status=ok")
@@ -138,6 +140,8 @@ final class BrowserSession {
             return
         }
         planningTask?.cancel()
+        planningGeneration = UUID()
+        let requestGeneration = planningGeneration
 
         do {
             let encoder = JSONEncoder()
@@ -166,6 +170,7 @@ final class BrowserSession {
                         throw BackendError.invalidResponse
                     }
                     guard self.state == .running,
+                          self.planningGeneration == requestGeneration,
                           self.planningSessionID == sessionID,
                           self.snapshot?.stateHash == response.stateHash else {
                         throw BackendError.invalidResponse
@@ -196,7 +201,7 @@ final class BrowserSession {
             .appendingPathComponent(".runs", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let formatter = ISO8601DateFormatter()
-        let filename = "\(formatter.string(from: Date()).replacingOccurrences(of: ":", with: "-")).md"
+        let filename = "\(formatter.string(from: Date()).replacingOccurrences(of: ":", with: "-"))-\(response.planID).md"
         let contents = """
         # Browser plan
 
