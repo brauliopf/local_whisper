@@ -242,7 +242,8 @@ export class OpenAIImageTextProvider implements BackendProvider, BrowserPlanner 
         planID: plan.plan_id,
         policyVersion: plan.policy_version,
         stateHash: plan.state_hash,
-        expiresAt: plan.expires_at,
+        // The model cannot reliably provide wall-clock timestamps; bind plan lifetime server-side.
+        expiresAt: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
       };
     } catch {
       throw new ProviderFailureError();
