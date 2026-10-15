@@ -115,11 +115,12 @@ function multipartBody(
 async function createTestApp(
   provider: BackendProvider = new FakeProvider(),
   browserSafetyReviewer: BrowserSafetyReviewer | null = approvedBrowserReviewer,
+  planner = fakePlanner,
 ) {
   return buildApp({
     config,
     provider,
-    planner: fakePlanner,
+    planner,
     browserSafetyReviewer: browserSafetyReviewer ?? undefined,
     transcriptionWorkflow: createTranscriptionWorkflow(provider),
   });
@@ -190,6 +191,34 @@ test("returns a schema-validated browser plan", async () => {
       safety_review: "approved",
       request_id: String(response.headers["x-request-id"]),
     });
+  } finally {
+    await app.close();
+  }
+});
+
+test("rejects browser plans that fail deterministic validation", async () => {
+  const app = await createTestApp(new FakeProvider(), approvedBrowserReviewer, {
+    async generateBrowserPlan() {
+      return {
+        ...await fakePlanner.generateBrowserPlan(),
+        code: "await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));",
+      };
+    },
+  });
+  try {
+    const response = await app.inject({
+      method: "POST",
+      url: "/browser-plans",
+      headers: { authorization: `Bearer ${serviceToken}`, "content-type": "application/json" },
+      payload: JSON.stringify({
+        goal: "Scroll down",
+        page_state: { url: "https://example.test", state_hash: "test-state" },
+        capability_policy: { allowed_actions: ["scroll"] },
+        policy_version: "browser-navigation-v1",
+        session_id: "session-1",
+      }),
+    });
+    assert.equal(response.statusCode, 422);
   } finally {
     await app.close();
   }
