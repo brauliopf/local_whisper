@@ -28,7 +28,6 @@ export interface BrowserPlan {
   planID: string;
   policyVersion: string;
   stateHash: string;
-  expiresAt: string;
 }
 
 export interface BrowserPlanner {
@@ -209,9 +208,8 @@ export class OpenAIImageTextProvider implements BackendProvider, BrowserPlanner 
                   plan_id: { type: "string" },
                   policy_version: { type: "string" },
                   state_hash: { type: "string" },
-                  expires_at: { type: "string" },
                 },
-                required: ["code", "plan_id", "policy_version", "state_hash", "expires_at"],
+                required: ["code", "plan_id", "policy_version", "state_hash"],
               },
             },
           },
@@ -231,8 +229,7 @@ export class OpenAIImageTextProvider implements BackendProvider, BrowserPlanner 
         typeof (value as Record<string, unknown>).code !== "string" ||
         typeof (value as Record<string, unknown>).plan_id !== "string" ||
         typeof (value as Record<string, unknown>).policy_version !== "string" ||
-        typeof (value as Record<string, unknown>).state_hash !== "string" ||
-        typeof (value as Record<string, unknown>).expires_at !== "string"
+        typeof (value as Record<string, unknown>).state_hash !== "string"
       ) {
         throw new Error("invalid browser plan");
       }
@@ -242,7 +239,7 @@ export class OpenAIImageTextProvider implements BackendProvider, BrowserPlanner 
         planID: plan.plan_id,
         policyVersion: plan.policy_version,
         stateHash: plan.state_hash,
-        expiresAt: plan.expires_at,
+
       };
     } catch {
       throw new ProviderFailureError();

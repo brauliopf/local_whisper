@@ -160,13 +160,28 @@ final class BrowserSession {
                         sessionID: sessionID,
                         serviceToken: serviceToken
                     )
-                    guard response.policyVersion == Self.policyVersion,
-                          response.stateHash == snapshot.stateHash,
-                          !response.code.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-                          !response.planID.isEmpty,
-                          response.safetyReview == "approved",
-                          let expiresAt = ISO8601DateFormatter().date(from: response.expiresAt),
-                          expiresAt > Date() else {
+                    guard response.policyVersion == Self.policyVersion else {
+                        logger.error("browser plan invalid policy_version=\(response.policyVersion, privacy: .public)")
+                        throw BackendError.invalidResponse
+                    }
+                    guard response.stateHash == snapshot.stateHash else {
+                        logger.error("browser plan invalid state_hash")
+                        throw BackendError.invalidResponse
+                    }
+                    guard !response.code.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                        logger.error("browser plan invalid empty_code")
+                        throw BackendError.invalidResponse
+                    }
+                    guard !response.planID.isEmpty else {
+                        logger.error("browser plan invalid empty_plan_id")
+                        throw BackendError.invalidResponse
+                    }
+                    guard response.safetyReview == "approved" else {
+                        logger.error("browser plan invalid safety_review=\(response.safetyReview ?? "missing", privacy: .public)")
+                        throw BackendError.invalidResponse
+                    }
+                    guard let expiresAt = Self.parseExpiration(response.expiresAt), expiresAt > Date() else {
+                        logger.error("browser plan invalid expires_at=\(response.expiresAt, privacy: .public)")
                         throw BackendError.invalidResponse
                     }
                     guard self.state == .running,
@@ -194,6 +209,13 @@ final class BrowserSession {
         } catch {
             toast.show(message: "Couldn't prepare the browser snapshot.", isError: true)
         }
+    }
+
+    private static func parseExpiration(_ value: String) -> Date? {
+        let formatter = ISO8601DateFormatter()
+        if let date = formatter.date(from: value) { return date }
+        formatter.formatOptions.insert(.withFractionalSeconds)
+        return formatter.date(from: value)
     }
 
     private func writePlanFile(goal: String, response: BackendBrowserPlanResponse) throws {

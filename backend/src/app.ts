@@ -407,12 +407,13 @@ export async function buildApp({
       throw new ApiError(422, "invalid_input", "The browser plan did not pass safety review.");
     }
     request.log.info({ requestId: request.id, checks: review.checks }, "browser_safety_review");
+    const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
     return {
       code: plan.code,
       plan_id: plan.planID,
       policy_version: plan.policyVersion,
       state_hash: plan.stateHash,
-      expires_at: plan.expiresAt,
+      expires_at: expiresAt,
       safety_review: "approved",
       request_id: request.id,
     };

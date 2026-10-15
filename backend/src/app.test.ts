@@ -78,7 +78,6 @@ const fakePlanner = {
       planID: "test-plan",
       policyVersion: "browser-navigation-v1",
       stateHash: "test-state",
-      expiresAt: "2099-01-01T00:00:00.000Z",
     };
   },
 };
@@ -182,15 +181,16 @@ test("returns a schema-validated browser plan", async () => {
       }),
     });
     assert.equal(response.statusCode, 200);
-    assert.deepEqual(response.json(), {
-      code: "await page.goto('https://example.test');",
-      plan_id: "test-plan",
-      policy_version: "browser-navigation-v1",
-      state_hash: "test-state",
-      expires_at: "2099-01-01T00:00:00.000Z",
-      safety_review: "approved",
-      request_id: String(response.headers["x-request-id"]),
-    });
+    const body = response.json() as Record<string, string>;
+    assert.equal(body.code, "await page.goto('https://example.test');");
+    assert.equal(body.plan_id, "test-plan");
+    assert.equal(body.policy_version, "browser-navigation-v1");
+    assert.equal(body.state_hash, "test-state");
+    assert.equal(body.safety_review, "approved");
+    assert.equal(body.request_id, String(response.headers["x-request-id"]));
+    const expiresAt = Date.parse(body.expires_at);
+    assert.ok(expiresAt > Date.now() + 4 * 60 * 1000);
+    assert.ok(expiresAt <= Date.now() + 5 * 60 * 1000);
   } finally {
     await app.close();
   }
