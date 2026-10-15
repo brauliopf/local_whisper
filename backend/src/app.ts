@@ -139,35 +139,6 @@ function browserPlanRequest(body: unknown): BrowserPlanRequest {
   };
 }
 
-function normalizeBrowserCode(code: string): string {
-  const scrollPattern = /await\s+page\.evaluate\(\s*(?:async\s*)?\(\)\s*=>\s*\{\s*window\.scrollTo\(\s*0\s*,\s*document\.body\.scrollHeight\s*\)\s*;?\s*\}\s*\)\s*;?/g;
-  return code
-    .replace(scrollPattern, "await page.mouse.wheel(0, 10000);")
-    .split("\n")
-    .filter((line) => ![
-      "require('playwright')",
-      "require(\"playwright\")",
-      "chromium.launch",
-      "newContext(",
-      "context.newPage",
-      "browser.close",
-      "context.close",
-    ].some((fragment) => line.includes(fragment)))
-    .join("\n")
-    .trim();
-}
-
-function plannerSafetyViolations(code: string): string[] {
-  const violations: string[] = [];
-  if (/\b(?:browser|context|process|require|import|eval|Function|page\.close|context\.close|browser\.close)\b/.test(code)) {
-    violations.push("forbidden_runtime_or_shutdown_api");
-  }
-  if (/\b(?:password|otp|token|secret|cookie|storageState|localStorage|sessionStorage)\b/i.test(code)) {
-    violations.push("sensitive_data_access");
-  }
-  return violations;
-}
-
 async function readImage(request: FastifyRequest, config: AppConfig): Promise<ImageUpload> {
   if (!request.isMultipart()) {
     throw new ApiError(400, "invalid_input", "The request must be multipart form data.");
@@ -400,40 +371,32 @@ export async function buildApp({
     if (plan === undefined || reply.raw.destroyed) {
       return;
     }
-    const normalizedCode = normalizeBrowserCode(plan.code);
-    let safetyReview: "approved" | "rejected" | "unavailable" = "unavailable";
-    const deterministicViolations = plannerSafetyViolations(normalizedCode);
-    if (deterministicViolations.length > 0) {
-      request.log.info({ requestId: request.id, violations: deterministicViolations }, "browser_deterministic_rejection");
-      safetyReview = "rejected";
-    } else if (browserSafetyReviewer) {
-      const review = await runWithDeadline(
-        request,
-        (signal) => browserSafetyReviewer.reviewBrowserPlan({
-          goal: planRequest.goal,
-          code: normalizedCode,
-          capabilityPolicy: planRequest.capabilityPolicy,
-          deterministicViolations,
-          deterministicPassed: true,
-          redactedPageState: planRequest.pageState,
-        }, signal),
-        config,
-      );
-      if (review) {
-        request.log.info({ requestId: request.id, checks: review.checks }, "browser_safety_review");
-      }
-      safetyReview = review?.approved ? "approved" : "rejected";
+    if (!browserSafetyReviewer) {
+      throw new ApiError(503, "provider_failure", "Browser safety review is not configured.");
     }
-    if (safetyReview === "rejected") {
+    const review = await runWithDeadline(
+      request,
+      (signal) => browserSafetyReviewer.reviewBrowserPlan({
+        goal: planRequest.goal,
+        code: plan.code,
+        capabilityPolicy: planRequest.capabilityPolicy,
+        deterministicViolations: [],
+        deterministicPassed: false,
+        redactedPageState: planRequest.pageState,
+      }, signal),
+      config,
+    );
+    if (!review?.approved) {
       throw new ApiError(422, "invalid_input", "The browser plan did not pass safety review.");
     }
+    request.log.info({ requestId: request.id, checks: review.checks }, "browser_safety_review");
     return {
-      code: normalizedCode,
+      code: plan.code,
       plan_id: plan.planID,
       policy_version: plan.policyVersion,
       state_hash: plan.stateHash,
       expires_at: plan.expiresAt,
-      safety_review: safetyReview,
+      safety_review: "approved", 
       request_id: request.id,
     };
   });

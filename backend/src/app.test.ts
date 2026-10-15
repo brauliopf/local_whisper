@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { AppConfig } from "./config.js";
 import { buildApp } from "./app.js";
+import type { BrowserSafetyReviewer } from "./typesafe.js";
 import type { BackendProvider } from "./provider.js";
 import { TranscriptionWorkflow } from "./transcription.js";
 
@@ -64,6 +65,12 @@ const alwaysEnglishClassifier = {
   },
 };
 
+const approvedBrowserReviewer: BrowserSafetyReviewer = {
+  async reviewBrowserPlan() {
+    return { approved: true, model: "test-jev", checks: { goal_alignment: 1 } };
+  },
+};
+
 const fakePlanner = {
   async generateBrowserPlan() {
     return {
@@ -105,11 +112,15 @@ function multipartBody(
   };
 }
 
-async function createTestApp(provider: BackendProvider = new FakeProvider()) {
+async function createTestApp(
+  provider: BackendProvider = new FakeProvider(),
+  browserSafetyReviewer: BrowserSafetyReviewer | null = approvedBrowserReviewer,
+) {
   return buildApp({
     config,
     provider,
     planner: fakePlanner,
+    browserSafetyReviewer: browserSafetyReviewer ?? undefined,
     transcriptionWorkflow: createTranscriptionWorkflow(provider),
   });
 }
@@ -176,9 +187,56 @@ test("returns a schema-validated browser plan", async () => {
       policy_version: "browser-policy-v1",
       state_hash: "test-state",
       expires_at: "2099-01-01T00:00:00.000Z",
-      safety_review: "unavailable",
+      safety_review: "approved",
       request_id: String(response.headers["x-request-id"]),
     });
+  } finally {
+    await app.close();
+  }
+});
+
+test("rejects browser plans when safety review is unavailable", async () => {
+  const app = await createTestApp(new FakeProvider(), null);
+  try {
+    const response = await app.inject({
+      method: "POST",
+      url: "/browser-plans",
+      headers: { authorization: `Bearer ${serviceToken}`, "content-type": "application/json" },
+      payload: JSON.stringify({
+        goal: "Search for Botero",
+        page_state: { url: "https://example.test", state_hash: "test-state" },
+        capability_policy: { allowed_actions: ["navigate"] },
+        policy_version: "browser-policy-v1",
+        session_id: "session-1",
+      }),
+    });
+    assert.equal(response.statusCode, 503);
+  } finally {
+    await app.close();
+  }
+});
+
+test("rejects browser plans that fail safety review", async () => {
+  const reviewer: BrowserSafetyReviewer = {
+    async reviewBrowserPlan() {
+      return { approved: false, model: "test-jev", checks: { goal_alignment: 0.1 } };
+    },
+  };
+  const app = await createTestApp(new FakeProvider(), reviewer);
+  try {
+    const response = await app.inject({
+      method: "POST",
+      url: "/browser-plans",
+      headers: { authorization: `Bearer ${serviceToken}`, "content-type": "application/json" },
+      payload: JSON.stringify({
+        goal: "Search for Botero",
+        page_state: { url: "https://example.test", state_hash: "test-state" },
+        capability_policy: { allowed_actions: ["navigate"] },
+        policy_version: "browser-policy-v1",
+        session_id: "session-1",
+      }),
+    });
+    assert.equal(response.statusCode, 422);
   } finally {
     await app.close();
   }
