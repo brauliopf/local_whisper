@@ -290,7 +290,10 @@ async function handle(command: Command): Promise<void> {
         const pageSnapshot = await withDeadline(
           command.deadline_ms,
           () => execute(command.code!, command.state_hash!, command.code_hash!, command.policy_version!, command.expires_at!),
-          () => { lifecycleGeneration += 1; },
+          () => {
+            lifecycleGeneration += 1;
+            void shutdown();
+          },
         );
         reply(command, true, { status: "running", ...(pageSnapshot ? { snapshot: pageSnapshot } : {}) });
         return;

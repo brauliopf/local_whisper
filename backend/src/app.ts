@@ -366,10 +366,14 @@ export async function buildApp({
 
   app.post("/browser-plans", async (request, reply) => {
     const planRequest = browserPlanRequest(request.body);
+    const browserDeadline = Date.now() + config.overallTimeoutMs;
+    const remainingBrowserTime = () => Math.max(1, browserDeadline - Date.now());
     const plan = await runWithDeadline(
       request,
       (signal) => planner.generateBrowserPlan(planRequest, signal),
       config,
+      Math.min(config.providerTimeoutMs, remainingBrowserTime()),
+      remainingBrowserTime(),
     );
     if (plan === undefined || reply.raw.destroyed) {
       return;
@@ -393,6 +397,8 @@ export async function buildApp({
         redactedPageState: planRequest.pageState,
       }, signal),
       config,
+      Math.min(config.typesafeProviderTimeoutMs, remainingBrowserTime()),
+      remainingBrowserTime(),
     );
     if (review === undefined || reply.raw.destroyed) {
       return;
