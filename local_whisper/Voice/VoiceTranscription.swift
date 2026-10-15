@@ -7,7 +7,7 @@ final class VoiceTranscription {
     var setEscapeEnabled: ((Bool) -> Void)?
 
     private let backend: any BackendClienting
-    private let keychain: any Keychaining
+    private let tokenState: ServiceTokenState
     private let toast: ToastPresenter
     private let capture: VoiceCapture
     private var transcribeTask: Task<Void, Never>?
@@ -15,11 +15,11 @@ final class VoiceTranscription {
 
     init(
         backend: any BackendClienting,
-        keychain: any Keychaining,
+        tokenState: ServiceTokenState,
         toast: ToastPresenter
     ) {
         self.backend = backend
-        self.keychain = keychain
+        self.tokenState = tokenState
         self.toast = toast
         self.capture = VoiceCapture(toast: toast)
         capture.onRecordingStateChanged = { [weak self] recording in
@@ -38,7 +38,7 @@ final class VoiceTranscription {
 
     func toggle() {
         guard !isTranscribing else { return }
-        guard keychain.hasServiceToken else {
+        guard tokenState.token?.isEmpty == false else {
             openSettings?()
             return
         }
@@ -59,7 +59,7 @@ final class VoiceTranscription {
             }
             await Telemetry.instrument(operation: "audio_transcription", trigger: "hotkey") {
                 do {
-                    guard let serviceToken = keychain.loadServiceToken(), !serviceToken.isEmpty else {
+                    guard let serviceToken = tokenState.token, !serviceToken.isEmpty else {
                         throw BackendError.missingServiceToken
                     }
                     let text = try await backend.transcribeAudio(at: url, serviceToken: serviceToken)

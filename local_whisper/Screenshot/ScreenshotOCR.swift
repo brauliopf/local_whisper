@@ -7,17 +7,17 @@ final class ScreenshotOCR {
     var openSettings: (() -> Void)?
 
     private let backend: any BackendClienting
-    private let keychain: any Keychaining
+    private let tokenState: ServiceTokenState
     private let toast: ToastPresenter
     private var task: Task<Void, Never>?
 
     init(
         backend: any BackendClienting,
-        keychain: any Keychaining,
+        tokenState: ServiceTokenState,
         toast: ToastPresenter
     ) {
         self.backend = backend
-        self.keychain = keychain
+        self.tokenState = tokenState
         self.toast = toast
     }
 
@@ -30,7 +30,7 @@ final class ScreenshotOCR {
     func captureAndRead() {
         cancel()
 
-        guard let serviceToken = keychain.loadServiceToken(), !serviceToken.isEmpty else {
+        guard let serviceToken = tokenState.token, !serviceToken.isEmpty else {
             openSettings?()
             return
         }
