@@ -22,6 +22,7 @@ type Command = {
   code?: string;
   code_hash?: string;
   state_hash?: string;
+  policy_version?: string;
 };
 
 interface ControlData {
@@ -67,7 +68,7 @@ function isCommand(value: unknown): value is Command {
     && typeof command.session_id === "string"
     && (command.deadline_ms === undefined || (typeof command.deadline_ms === "number" && Number.isFinite(command.deadline_ms)))
     && ["start", "snapshot", "pause", "resume", "stop", "execute"].includes(command.type as string)
-    && (command.type !== "execute" || (typeof command.code === "string" && typeof command.code_hash === "string" && typeof command.state_hash === "string"));
+    && (command.type !== "execute" || (typeof command.code === "string" && typeof command.code_hash === "string" && typeof command.state_hash === "string" && typeof command.policy_version === "string"));
 }
 
 function invalidCommand(value: unknown): Command {
@@ -217,11 +218,11 @@ async function start(): Promise<PageSnapshot | undefined> {
   return snapshot();
 }
 
-async function execute(code: string, expectedStateHash: string, expectedCodeHash: string): Promise<PageSnapshot | undefined> {
+async function execute(code: string, expectedStateHash: string, expectedCodeHash: string, policyVersion: string): Promise<PageSnapshot | undefined> {
   if (!page) throw new Error("Browser tab is not running");
   const actualCodeHash = createHash("sha256").update(code).digest("hex");
   if (actualCodeHash !== expectedCodeHash) throw new Error("code hash mismatch");
-  const validation = validateBrowserCode(code);
+  const validation = validateBrowserCode(code, policyVersion);
   if (!validation.valid) throw new Error(`policy violation: ${validation.violations.map((item) => item.category).join(",")}`);
   const before = await snapshot();
   if (!before || before.stateHash !== expectedStateHash) throw new Error("stale browser state");
@@ -276,7 +277,7 @@ async function handle(command: Command): Promise<void> {
       case "execute": {
         const pageSnapshot = await withDeadline(
           command.deadline_ms,
-          () => execute(command.code!, command.state_hash!, command.code_hash!),
+          () => execute(command.code!, command.state_hash!, command.code_hash!, command.policy_version!),
           () => { lifecycleGeneration += 1; },
         );
         reply(command, true, { status: "running", ...(pageSnapshot ? { snapshot: pageSnapshot } : {}) });

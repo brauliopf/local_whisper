@@ -23,7 +23,7 @@ final class BrowserSession {
     private let toast: ToastPresenter
     private let sidecar: BrowserSidecar
     private let backend: any BackendClienting
-    private let keychain: any Keychaining
+    private let tokenState: ServiceTokenState
     private let logger = Logger(subsystem: "brauliopf.local-whisper", category: "browser")
     private var planningSessionID: String?
     private var captureGoalWhenReady = false
@@ -39,12 +39,12 @@ final class BrowserSession {
         toast: ToastPresenter,
         sidecar: BrowserSidecar,
         backend: any BackendClienting,
-        keychain: any Keychaining
+        tokenState: ServiceTokenState
     ) {
         self.toast = toast
         self.sidecar = sidecar
         self.backend = backend
-        self.keychain = keychain
+        self.tokenState = tokenState
         sidecar.onResponse = { [weak self] response in
             self?.handle(response)
         }
@@ -131,7 +131,7 @@ final class BrowserSession {
             toast.show(message: "Tell me what you want the browser to do.", isError: true)
             return
         }
-        guard let serviceToken = keychain.loadServiceToken(), !serviceToken.isEmpty else {
+        guard let serviceToken = tokenState.token, !serviceToken.isEmpty else {
             toast.show(message: "Add the backend service token in Settings.", isError: true)
             return
         }
@@ -174,7 +174,7 @@ final class BrowserSession {
                     } catch {
                         logger.error("browser step=plan_file status=failed category=storage_error")
                     }
-                    try sidecar.execute(code: response.code, stateHash: response.stateHash)
+                    try sidecar.execute(code: response.code, stateHash: response.stateHash, policyVersion: response.policyVersion)
                     toast.show(message: "Executing browser plan…", isError: false, autoDismiss: false)
                 } catch is CancellationError {
                     return

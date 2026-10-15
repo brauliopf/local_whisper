@@ -43,10 +43,13 @@ final class AppCoordinator {
         self.browserVoiceGoal = BrowserVoiceGoal(backend: backend, tokenState: tokenState, toast: toast)
         self.screenshot = ScreenshotOCR(backend: backend, tokenState: tokenState, toast: toast)
         self.countdown = Countdown(toast: toast)
-        self.browser = BrowserSession(toast: toast, sidecar: BrowserSidecar())
+        self.browser = BrowserSession(toast: toast, sidecar: BrowserSidecar(), backend: backend, tokenState: tokenState)
 
+        browser.onReadyForGoal = { [weak self] in
+            self?.browserVoiceGoal.toggle()
+        }
         browserVoiceGoal.onGoal = { [weak self] goal in
-            self?.toast.show(message: "Browser goal captured: \(goal)", isError: false)
+            self?.browser.requestPlan(for: goal)
         }
 
         voice.setEscapeEnabled = { [weak self] enabled in
@@ -134,7 +137,7 @@ final class AppCoordinator {
         screenshot.cancel()
         encouragement.cancel()
 
-        browserVoiceGoal.toggle()
+        browser.browseWeb()
     }
 
     func showBrowserPlan(goal: String, response: BackendBrowserPlanResponse) {
