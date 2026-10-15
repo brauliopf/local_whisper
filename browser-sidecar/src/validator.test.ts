@@ -33,8 +33,16 @@ test("rejects local, private, link-local, and non-http targets", () => {
     "http://192.168.1.1",
     "http://169.254.169.254",
     "http://[::1]",
+    "http://[::]",
+    "http://[::0]",
+    "http://[0:0:0:0:0:0:0:0]",
     "http://[::ffff:127.0.0.1]",
+    "http://[::ffff:0:7f00:1]",
+    "http://[::7f00:1]",
+    "http://[ff02::1]",
+    "http://[2001:db8::1]",
     "http://[fd00::1]",
+    "http://255.255.255.255",
     "file:///etc/passwd",
   ]) {
     assert.equal(valid(`await page.goto('${url}');`).valid, false, url);
@@ -48,6 +56,7 @@ test("rejects sensitive or non-search input", () => {
   assert.equal(valid("await page.getByRole('textbox').fill('secret');").valid, false);
   assert.equal(valid("await page.getByRole('searchbox').fill(value);").valid, false);
   assert.equal(valid("await page.locator('#password').press('a');").valid, false);
+  assert.equal(valid("await page.getByRole('searchbox').press(key);").valid, false);
 });
 
 test("requires the supported policy version", () => {

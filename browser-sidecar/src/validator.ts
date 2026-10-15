@@ -71,29 +71,46 @@ function ipv4InRange(hostname: string, prefix: number[], mask: number): boolean 
   return ((value >>> 0) & bits) === ((target >>> 0) & bits);
 }
 
+function parseIPv6(host: string): bigint | undefined {
+  const parts = host.split("::");
+  if (parts.length > 2) return undefined;
+  const expand = (value: string): number[] => value ? value.split(":").flatMap((part) => {
+    if (!part.includes(".")) return [Number.parseInt(part, 16)];
+    const octets = part.split(".").map(Number);
+    return octets.length === 4 && octets.every((octet) => Number.isInteger(octet) && octet >= 0 && octet <= 255)
+      ? [(octets[0] << 8) | octets[1], (octets[2] << 8) | octets[3]]
+      : [Number.NaN];
+  }) : [];
+  const left = expand(parts[0]);
+  const right = parts.length === 2 ? expand(parts[1]) : [];
+  const missing = 8 - left.length - right.length;
+  if (missing < 0 || (parts.length === 1 && missing !== 0)) return undefined;
+  const groups = [...left, ...Array.from({ length: missing }, () => 0), ...right];
+  if (groups.length !== 8 || groups.some((group) => !Number.isInteger(group) || group < 0 || group > 0xffff)) return undefined;
+  return groups.reduce((value, group) => (value << 16n) | BigInt(group), 0n);
+}
+
+function ipv6InRange(value: bigint, prefix: bigint, bits: number): boolean {
+  const mask = bits === 0 ? 0n : ((1n << BigInt(bits)) - 1n) << BigInt(128 - bits);
+  return (value & mask) === (prefix & mask);
+}
+
 function isBlockedHost(hostname: string): boolean {
   const host = hostname.toLowerCase().replace(/^\[|\]$/g, "").replace(/\.+$/, "");
   if (host === "localhost" || host.endsWith(".localhost") || host === "broadcasthost") return true;
   if (host.includes(":")) {
-    const normalized = host.replace(/^0+:/, "::");
-    if (normalized === "::1" || normalized === "0:0:0:0:0:0:0:1") return true;
-    const groups = host.split(":");
-    const firstGroup = Number.parseInt(groups[0] || "0", 16);
-    if (Number.isInteger(firstGroup) && ((firstGroup >= 0xfc00 && firstGroup <= 0xfdff) || (firstGroup >= 0xfe80 && firstGroup <= 0xfebf))) return true;
-    const mapped = host.match(/^::ffff:(.+)$/);
-    if (mapped) {
-      const mappedHost = mapped[1].includes(".")
-        ? mapped[1]
-        : (() => {
-            const groups = mapped[1].split(":");
-            if (groups.length !== 2) return mapped[1];
-            const high = Number.parseInt(groups[0], 16);
-            const low = Number.parseInt(groups[1], 16);
-            return Number.isInteger(high) && Number.isInteger(low)
-              ? `${high >>> 8}.${high & 255}.${low >>> 8}.${low & 255}`
-              : mapped[1];
-          })();
-      if (isBlockedHost(mappedHost)) return true;
+    const value = parseIPv6(host);
+    if (value === undefined) return true;
+    if (host.startsWith("::ffff:") || ipv6InRange(value, 0n, 96) ||
+        ipv6InRange(value, 0xfc00n << 112n, 7) ||
+        ipv6InRange(value, 0xfe80n << 112n, 10) ||
+        ipv6InRange(value, 0xffn << 120n, 8) ||
+        ipv6InRange(value, 0x20010db8n << 96n, 32) ||
+        ipv6InRange(value, 0xffffn << 112n, 16) ||
+        ipv6InRange(value, 0xffffn << 32n, 96)) return true;
+    const mapped = Number(value >> 32n & 0xffffffffn);
+    if (Number(value >> 32n) === 0xffff || Number(value >> 32n) === 0) {
+      if (isBlockedHost(`${mapped >>> 24}.${(mapped >>> 16) & 255}.${(mapped >>> 8) & 255}.${mapped & 255}`)) return true;
     }
     return false;
   }
@@ -110,6 +127,7 @@ function isBlockedHost(hostname: string): boolean {
     [[198, 51, 100, 0], 24],
     [[203, 0, 113, 0], 24],
     [[224, 0, 0, 0], 4],
+    [[255, 0, 0, 0], 8],
   ].some(([prefix, mask]) => ipv4InRange(host, prefix as number[], mask as number));
 }
 
@@ -167,8 +185,13 @@ function validateCall(node: any, violations: BrowserViolation[]): void {
     const safeSearchField = chain[1] === "getByRole"
       ? true
       : safeSearchLocator(locatorCall);
-    if ((method === "fill" || method === "press") && (!safeSearchField || (method === "fill" && !isString(node.arguments?.[0])))) {
-      violations.push(violation("sensitive_input", "Only literal values for search-oriented fields may be filled."));
+    if ((method === "fill" || method === "press") && (!safeSearchField || !isString(node.arguments?.[0]))) {
+      violations.push(violation(
+        "sensitive_input",
+        method === "press"
+          ? "Only literal keys for search-oriented fields may be pressed."
+          : "Only literal values for search-oriented fields may be filled.",
+      ));
     }
     if (method === "selectOption" && (!isString(node.arguments?.[0]) || !safeSearchLocator(locatorCall))) {
       violations.push(violation("sensitive_input", "Only safe search-oriented controls may be selected."));
