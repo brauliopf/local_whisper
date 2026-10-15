@@ -16,6 +16,7 @@ final class AppCoordinator {
 
     private let toast = ToastPresenter()
     private let hotkeys = Hotkeys()
+    let tokenState: ServiceTokenState
     private let encouragement: Encouragement
     private let voice: VoiceTranscription
     private let screenshot: ScreenshotOCR
@@ -34,9 +35,10 @@ final class AppCoordinator {
         backend: any BackendClienting,
         keychain: any Keychaining
     ) {
-        self.encouragement = Encouragement(backend: backend, keychain: keychain, toast: toast)
-        self.voice = VoiceTranscription(backend: backend, keychain: keychain, toast: toast)
-        self.screenshot = ScreenshotOCR(backend: backend, keychain: keychain, toast: toast)
+        self.tokenState = ServiceTokenState(keychain: keychain)
+        self.encouragement = Encouragement(backend: backend, tokenState: tokenState, toast: toast)
+        self.voice = VoiceTranscription(backend: backend, tokenState: tokenState, toast: toast)
+        self.screenshot = ScreenshotOCR(backend: backend, tokenState: tokenState, toast: toast)
         self.countdown = Countdown(toast: toast)
         self.browser = BrowserSession(toast: toast, sidecar: BrowserSidecar())
 

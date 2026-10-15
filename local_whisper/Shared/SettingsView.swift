@@ -1,15 +1,16 @@
 import SwiftUI
 
+@MainActor
 struct SettingsView: View {
-    private let keychain: any Keychaining
+    private let tokenState: ServiceTokenState
 
     @State private var serviceToken = ""
     @State private var backendStatusMessage: String?
     @State private var countdownMinutesText = String(TimerSettings.minutes)
     @FocusState private var countdownMinutesFocused: Bool
 
-    init(keychain: any Keychaining = KeychainStore()) {
-        self.keychain = keychain
+    init(tokenState: ServiceTokenState) {
+        self.tokenState = tokenState
     }
 
     var body: some View {
@@ -20,7 +21,7 @@ struct SettingsView: View {
 
                 HStack {
                     Button("Save") {
-                        if keychain.saveServiceToken(serviceToken) {
+                        if tokenState.save(serviceToken) {
                             backendStatusMessage = "Saved."
                         } else {
                             backendStatusMessage = "Couldn't save the token."
@@ -88,7 +89,8 @@ struct SettingsView: View {
         .padding()
         .frame(width: 440)
         .onAppear {
-            serviceToken = keychain.loadServiceToken() ?? ""
+            tokenState.refresh()
+            serviceToken = tokenState.token ?? ""
             countdownMinutesText = String(TimerSettings.minutes)
         }
         .onChange(of: countdownMinutesFocused) { _, focused in
