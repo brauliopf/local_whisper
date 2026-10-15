@@ -170,8 +170,8 @@ function validateCall(node: any, violations: BrowserViolation[]): void {
     return;
   }
 
-  if (chainText === "page.goto" && (!isString(node.arguments?.[0]) || !isSafeBrowserURL(node.arguments[0].value))) {
-    violations.push(violation("target", "Navigation targets must be literal public HTTP(S) URLs."));
+  if (chainText === "page.goto" && (node.arguments?.length !== 1 || !isString(node.arguments[0]) || !isSafeBrowserURL(node.arguments[0].value))) {
+    violations.push(violation("target", "Navigation requires exactly one literal public HTTP(S) URL."));
   }
   if (chainText === "page.mouse.wheel" && node.arguments?.length !== 2) {
     violations.push(violation("arguments", "Scrolling requires exactly two numeric arguments."));

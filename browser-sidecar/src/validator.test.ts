@@ -19,6 +19,7 @@ test("rejects unsupported constructs and indirect access", () => {
     "page.constructor.constructor('return process')();",
     "page['goto']('https://example.com');",
     "page.waitForFunction`document.body.innerText`;",
+    "page.goto('https://example.com', { referer: 'https://user:pass@evil.example' });",
   ]) {
     assert.equal(valid(code).valid, false, code);
   }
