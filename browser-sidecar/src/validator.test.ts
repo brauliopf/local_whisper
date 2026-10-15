@@ -16,8 +16,10 @@ test("rejects unsupported constructs and indirect access", () => {
     "label: await page.goto('https://example.com');",
     "class Exploit {}",
     "page.foo.click();",
+    "page.constructor.constructor('return process')();",
     "page['goto']('https://example.com');",
     "page.waitForFunction`document.body.innerText`;",
+    "page.goto('https://example.com', { referer: 'https://user:pass@evil.example' });",
   ]) {
     assert.equal(valid(code).valid, false, code);
   }
@@ -49,6 +51,7 @@ test("rejects local, private, link-local, and non-http targets", () => {
   }
   assert.equal(valid("await page.goto('https://example.com');").valid, true);
   assert.equal(valid("await page.goto('http://fdic.gov');").valid, true);
+  assert.equal(valid("await page.goto('https://user:password@example.com');").valid, false);
 });
 
 test("rejects sensitive or non-search input", () => {
@@ -56,6 +59,7 @@ test("rejects sensitive or non-search input", () => {
   assert.equal(valid("await page.getByRole('textbox').fill('secret');").valid, false);
   assert.equal(valid("await page.getByRole('searchbox').fill(value);").valid, false);
   assert.equal(valid("await page.locator('#password').press('a');").valid, false);
+  assert.equal(valid("await page.locator('input[type=search] + input[type=password]').fill('secret');").valid, false);
   assert.equal(valid("await page.getByRole('searchbox').press(key);").valid, false);
 });
 

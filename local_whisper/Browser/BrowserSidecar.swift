@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 struct BrowserControl: Codable, Sendable {
@@ -131,6 +132,17 @@ final class BrowserSidecar {
         try send(type: "snapshot")
     }
 
+    func execute(code: String, stateHash: String, policyVersion: String, expiresAt: String) throws {
+        let codeHash = SHA256.hash(data: Data(code.utf8)).map { String(format: "%02x", $0) }.joined()
+        try send(type: "execute", fields: [
+            "code": code,
+            "code_hash": codeHash,
+            "state_hash": stateHash,
+            "policy_version": policyVersion,
+            "expires_at": expiresAt,
+        ])
+    }
+
     func pause() throws {
         try send(type: "pause")
     }
@@ -153,7 +165,7 @@ final class BrowserSidecar {
         sessionID = nil
     }
 
-    private func send(type: String) throws {
+    private func send(type: String, fields: [String: String] = [:]) throws {
         guard isStarted, let input, let sessionID else {
             throw BrowserSidecarError.unavailable
         }
@@ -163,13 +175,14 @@ final class BrowserSidecar {
             guard !Task.isCancelled else { return }
             self?.timeout(id: id, sessionID: sessionID)
         }
-        let command: [String: Any] = [
+        var command: [String: Any] = [
             "id": id,
             "version": Self.protocolVersion,
             "session_id": sessionID,
             "deadline_ms": Int(Date().addingTimeInterval(Self.commandTimeout).timeIntervalSince1970 * 1_000),
             "type": type,
         ]
+        fields.forEach { command[$0.key] = $0.value }
         let data = try JSONSerialization.data(withJSONObject: command)
         input.fileHandleForWriting.write(data)
         input.fileHandleForWriting.write(Data([0x0A]))

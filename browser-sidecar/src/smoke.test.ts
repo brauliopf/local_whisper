@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { awaitAndClose } from "./shutdown.js";
 
 const source = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "src", "server.ts"), "utf8");
+const executionSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "src", "execution.ts"), "utf8");
 
 test("sidecar package builds", () => {
   assert.equal(typeof process.version, "string");
@@ -54,4 +55,18 @@ test("failed browser initialization closes local ownership", () => {
 test("expired commands are rejected before start claims the session", () => {
   const handle = source.slice(source.indexOf("async function handle"));
   assert.ok(handle.indexOf('"request_expired"') < handle.indexOf('if (command.type === "start") sessionID'));
+});
+
+test("execution validates hashes, policy, state, and expiry", () => {
+  const execution = executionSource;
+  assert.ok(execution.includes("code hash mismatch"));
+  assert.ok(execution.includes("validateBrowserCode(code, policyVersion)"));
+  assert.ok(execution.includes("stale browser state"));
+  assert.ok(execution.includes("expired browser plan"));
+});
+
+test("execution timeout tears down browser ownership", () => {
+  const executionCase = source.slice(source.indexOf('case "execute"'));
+  assert.ok(executionCase.includes("lifecycleGeneration += 1"));
+  assert.ok(executionCase.includes("void shutdown()"));
 });

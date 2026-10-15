@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { createInterface } from "node:readline";
+import { lookup } from "node:dns/promises";
 import { chromium, type Browser, type BrowserContext, type Page } from "playwright";
 import {
   redactControl,
@@ -8,6 +9,8 @@ import {
   type PageSnapshot,
 } from "./redaction.js";
 import { awaitAndClose } from "./shutdown.js";
+import { isSafeBrowserURL } from "./validator.js";
+import { executeBrowserPlan } from "./execution.js";
 
 const PROTOCOL_VERSION = 1;
 
@@ -16,7 +19,12 @@ type Command = {
   version: number;
   session_id: string;
   deadline_ms?: number;
-  type: "start" | "snapshot" | "pause" | "resume" | "stop";
+  type: "start" | "snapshot" | "pause" | "resume" | "stop" | "execute";
+  code?: string;
+  code_hash?: string;
+  state_hash?: string;
+  policy_version?: string;
+  expires_at?: string;
 };
 
 interface ControlData {
@@ -42,6 +50,7 @@ let sessionID: string | undefined;
 let lifecycleGeneration = 0;
 let shuttingDown = false;
 let launchInFlight: Promise<Browser> | undefined;
+let teardownInFlight: Promise<void> | undefined;
 
 function reply(command: Command, ok: boolean, state: SidecarState, error?: string): void {
   process.stdout.write(`${JSON.stringify({
@@ -61,7 +70,8 @@ function isCommand(value: unknown): value is Command {
     && typeof command.version === "number"
     && typeof command.session_id === "string"
     && (command.deadline_ms === undefined || (typeof command.deadline_ms === "number" && Number.isFinite(command.deadline_ms)))
-    && ["start", "snapshot", "pause", "resume", "stop"].includes(command.type as string);
+    && ["start", "snapshot", "pause", "resume", "stop", "execute"].includes(command.type as string)
+    && (command.type !== "execute" || (typeof command.code === "string" && typeof command.code_hash === "string" && typeof command.state_hash === "string" && typeof command.policy_version === "string" && typeof command.expires_at === "string"));
 }
 
 function invalidCommand(value: unknown): Command {
@@ -77,6 +87,10 @@ function invalidCommand(value: unknown): Command {
 function errorCategory(error: unknown): string {
   const message = error instanceof Error ? error.message.toLowerCase() : "";
   if (message.includes("timeout")) return "operation_timeout";
+  if (message.includes("code hash")) return "code_hash_mismatch";
+  if (message.includes("stale browser state")) return "stale_browser_state";
+  if (message.includes("expired browser plan")) return "expired_browser_plan";
+  if (message.includes("policy violation")) return "policy_violation";
   if (message.includes("launch") || message.includes("executable")) return "browser_unavailable";
   return "browser_operation_failed";
 }
@@ -169,6 +183,31 @@ async function start(): Promise<PageSnapshot | undefined> {
         throw new Error("operation timeout");
       }
       const launchedContext = await launchedBrowser.newContext();
+      await launchedContext.route("**/*", async (route) => {
+        const rawURL = route.request().url();
+        if (rawURL === "about:blank") {
+          await route.continue();
+          return;
+        }
+        try {
+          const url = new URL(rawURL);
+          if (!isSafeBrowserURL(rawURL)) {
+            await route.abort("blockedbyclient");
+            return;
+          }
+          const addresses = await lookup(url.hostname, { all: true, verbatim: true });
+          if (addresses.length === 0 || addresses.some(({ address }) => {
+            const host = address.includes(":") ? `[${address}]` : address;
+            return !isSafeBrowserURL(`${url.protocol}//${host}`);
+          })) {
+            await route.abort("blockedbyclient");
+            return;
+          }
+          await route.continue();
+        } catch {
+          await route.abort("blockedbyclient");
+        }
+      });
       let acceptedPage: Page | undefined;
       launchedContext.on("page", (newPage) => {
         if (!acceptedPage) {
@@ -208,7 +247,16 @@ async function start(): Promise<PageSnapshot | undefined> {
   return snapshot();
 }
 
+async function execute(code: string, expectedStateHash: string, expectedCodeHash: string, policyVersion: string, expiresAt: string): Promise<PageSnapshot | undefined> {
+  if (!page) throw new Error("Browser tab is not running");
+  return executeBrowserPlan(page, snapshot, code, expectedStateHash, expectedCodeHash, policyVersion, expiresAt);
+}
+
 async function handle(command: Command): Promise<void> {
+  if (command.type !== "stop" && teardownInFlight) {
+    await teardownInFlight;
+    teardownInFlight = undefined;
+  }
   if (command.version !== PROTOCOL_VERSION || !command.session_id) {
     reply(command, false, { status: "idle" }, "protocol_invalid");
     return;
@@ -226,7 +274,7 @@ async function handle(command: Command): Promise<void> {
   try {
     switch (command.type) {
       case "start": {
-        const pageSnapshot = await withDeadline(command.deadline_ms, start, () => { lifecycleGeneration += 1; });
+        const pageSnapshot = await withDeadline(command.deadline_ms, start, () => { lifecycleGeneration += 1; teardownInFlight = shutdown(); });
         reply(command, true, { status: "running", ...(pageSnapshot ? { snapshot: pageSnapshot } : {}) });
         return;
       }
@@ -235,7 +283,7 @@ async function handle(command: Command): Promise<void> {
           reply(command, true, { status: "paused" });
           return;
         }
-        const pageSnapshot = await withDeadline(command.deadline_ms, snapshot, () => { lifecycleGeneration += 1; });
+        const pageSnapshot = await withDeadline(command.deadline_ms, snapshot, () => { lifecycleGeneration += 1; teardownInFlight = shutdown(); });
         reply(command, true, { status: pageSnapshot ? "running" : "paused", ...(pageSnapshot ? { snapshot: pageSnapshot } : {}) });
         return;
       }
@@ -247,11 +295,23 @@ async function handle(command: Command): Promise<void> {
       case "resume": {
         paused = false;
         pauseGeneration += 1;
-        const pageSnapshot = await withDeadline(command.deadline_ms, snapshot, () => { lifecycleGeneration += 1; });
+        const pageSnapshot = await withDeadline(command.deadline_ms, snapshot, () => { lifecycleGeneration += 1; teardownInFlight = shutdown(); });
         reply(command, true, { status: "running", ...(pageSnapshot ? { snapshot: pageSnapshot } : {}) });
         return;
       }
-      case "stop":
+      case "execute": {
+        const pageSnapshot = await withDeadline(
+          command.deadline_ms,
+          () => execute(command.code!, command.state_hash!, command.code_hash!, command.policy_version!, command.expires_at!),
+          () => {
+            lifecycleGeneration += 1;
+            teardownInFlight = shutdown();
+          },
+        );
+        reply(command, true, { status: "running", ...(pageSnapshot ? { snapshot: pageSnapshot } : {}) });
+        return;
+      }
+      case "stop": {
         // Stop is a lifecycle barrier: cleanup must await an in-flight launch,
         // even if the original start request already timed out.
         await shutdown();
@@ -261,6 +321,7 @@ async function handle(command: Command): Promise<void> {
         reply(command, true, { status: "stopped" });
         setImmediate(() => process.exit(0));
         return;
+      }
     }
   } catch (error) {
     reply(command, false, { status: browser ? (paused ? "paused" : "running") : "idle" }, errorCategory(error));
