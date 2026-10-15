@@ -57,6 +57,7 @@ test("rejects sensitive or non-search input", () => {
   assert.equal(valid("await page.getByRole('textbox').fill('secret');").valid, false);
   assert.equal(valid("await page.getByRole('searchbox').fill(value);").valid, false);
   assert.equal(valid("await page.locator('#password').press('a');").valid, false);
+  assert.equal(valid("await page.locator('input[type=search] + input[type=password]').fill('secret');").valid, false);
   assert.equal(valid("await page.getByRole('searchbox').press(key);").valid, false);
 });
 

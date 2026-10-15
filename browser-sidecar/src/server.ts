@@ -50,6 +50,7 @@ let sessionID: string | undefined;
 let lifecycleGeneration = 0;
 let shuttingDown = false;
 let launchInFlight: Promise<Browser> | undefined;
+let teardownInFlight: Promise<void> | undefined;
 
 function reply(command: Command, ok: boolean, state: SidecarState, error?: string): void {
   process.stdout.write(`${JSON.stringify({
@@ -262,6 +263,10 @@ async function execute(code: string, expectedStateHash: string, expectedCodeHash
 }
 
 async function handle(command: Command): Promise<void> {
+  if (command.type !== "stop" && teardownInFlight) {
+    await teardownInFlight;
+    teardownInFlight = undefined;
+  }
   if (command.version !== PROTOCOL_VERSION || !command.session_id) {
     reply(command, false, { status: "idle" }, "protocol_invalid");
     return;
@@ -310,7 +315,7 @@ async function handle(command: Command): Promise<void> {
           () => execute(command.code!, command.state_hash!, command.code_hash!, command.policy_version!, command.expires_at!),
           () => {
             lifecycleGeneration += 1;
-            void shutdown();
+            teardownInFlight = shutdown();
           },
         );
         reply(command, true, { status: "running", ...(pageSnapshot ? { snapshot: pageSnapshot } : {}) });

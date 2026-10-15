@@ -149,7 +149,7 @@ function safeSearchLocator(node: any): boolean {
   }
   if (factory === "locator" && node.callee.object?.type === "Identifier" && node.callee.object.name === "page") {
     const selector = node.arguments?.[0];
-    return isString(selector) && /(?:^|\s|\])input\s*\[\s*type\s*=\s*["']search["']\s*\]|\[\s*role\s*=\s*["']searchbox["']\s*\]/i.test(selector.value);
+    return isString(selector) && /^(?:input\[type=["']search["']\]|\[role=["']searchbox["']\])$/i.test(selector.value.replace(/\s+/g, ""));
   }
   return false;
 }
