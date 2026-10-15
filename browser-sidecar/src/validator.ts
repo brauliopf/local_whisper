@@ -72,9 +72,31 @@ function ipv4InRange(hostname: string, prefix: number[], mask: number): boolean 
 }
 
 function isBlockedHost(hostname: string): boolean {
-  const host = hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  const host = hostname.toLowerCase().replace(/^\[|\]$/g, "").replace(/\.+$/, "");
   if (host === "localhost" || host.endsWith(".localhost") || host === "broadcasthost") return true;
-  if (host === "::1" || host === "0:0:0:0:0:0:0:1" || host.startsWith("fc") || host.startsWith("fd") || host.startsWith("fe80:")) return true;
+  if (host.includes(":")) {
+    const normalized = host.replace(/^0+:/, "::");
+    if (normalized === "::1" || normalized === "0:0:0:0:0:0:0:1") return true;
+    const groups = host.split(":");
+    const firstGroup = Number.parseInt(groups[0] || "0", 16);
+    if (Number.isInteger(firstGroup) && ((firstGroup >= 0xfc00 && firstGroup <= 0xfdff) || (firstGroup >= 0xfe80 && firstGroup <= 0xfebf))) return true;
+    const mapped = host.match(/^::ffff:(.+)$/);
+    if (mapped) {
+      const mappedHost = mapped[1].includes(".")
+        ? mapped[1]
+        : (() => {
+            const groups = mapped[1].split(":");
+            if (groups.length !== 2) return mapped[1];
+            const high = Number.parseInt(groups[0], 16);
+            const low = Number.parseInt(groups[1], 16);
+            return Number.isInteger(high) && Number.isInteger(low)
+              ? `${high >>> 8}.${high & 255}.${low >>> 8}.${low & 255}`
+              : mapped[1];
+          })();
+      if (isBlockedHost(mappedHost)) return true;
+    }
+    return false;
+  }
   return [
     [[0, 0, 0, 0], 8],
     [[10, 0, 0, 0], 8],
@@ -145,7 +167,7 @@ function validateCall(node: any, violations: BrowserViolation[]): void {
     const safeSearchField = chain[1] === "getByRole"
       ? true
       : safeSearchLocator(locatorCall);
-    if (method === "fill" && (!safeSearchField || !isString(node.arguments?.[0]))) {
+    if ((method === "fill" || method === "press") && (!safeSearchField || (method === "fill" && !isString(node.arguments?.[0])))) {
       violations.push(violation("sensitive_input", "Only literal values for search-oriented fields may be filled."));
     }
     if (method === "selectOption" && (!isString(node.arguments?.[0]) || !safeSearchLocator(locatorCall))) {
@@ -154,7 +176,7 @@ function validateCall(node: any, violations: BrowserViolation[]): void {
   }
 }
 
-export function validateBrowserCode(code: string, policyVersion = BROWSER_POLICY_VERSION): ValidationResult {
+export function validateBrowserCode(code: string, policyVersion: string): ValidationResult {
   const violations: BrowserViolation[] = [];
   if (policyVersion !== BROWSER_POLICY_VERSION) {
     violations.push(violation("policy_version", "The browser policy version is unsupported."));
