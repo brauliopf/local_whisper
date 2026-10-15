@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { awaitAndClose } from "./shutdown.js";
 
 const source = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "src", "server.ts"), "utf8");
+const executionSource = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "src", "execution.ts"), "utf8");
 
 test("sidecar package builds", () => {
   assert.equal(typeof process.version, "string");
@@ -57,7 +58,7 @@ test("expired commands are rejected before start claims the session", () => {
 });
 
 test("execution validates hashes, policy, state, and expiry", () => {
-  const execution = source.slice(source.indexOf("async function execute"));
+  const execution = executionSource;
   assert.ok(execution.includes("code hash mismatch"));
   assert.ok(execution.includes("validateBrowserCode(code, policyVersion)"));
   assert.ok(execution.includes("stale browser state"));

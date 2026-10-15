@@ -1,7 +1,6 @@
 import { createHash } from "node:crypto";
 import { createInterface } from "node:readline";
 import { lookup } from "node:dns/promises";
-import vm from "node:vm";
 import { chromium, type Browser, type BrowserContext, type Page } from "playwright";
 import {
   redactControl,
@@ -10,7 +9,8 @@ import {
   type PageSnapshot,
 } from "./redaction.js";
 import { awaitAndClose } from "./shutdown.js";
-import { isSafeBrowserURL, validateBrowserCode } from "./validator.js";
+import { isSafeBrowserURL } from "./validator.js";
+import { executeBrowserPlan } from "./execution.js";
 
 const PROTOCOL_VERSION = 1;
 
@@ -249,17 +249,7 @@ async function start(): Promise<PageSnapshot | undefined> {
 
 async function execute(code: string, expectedStateHash: string, expectedCodeHash: string, policyVersion: string, expiresAt: string): Promise<PageSnapshot | undefined> {
   if (!page) throw new Error("Browser tab is not running");
-  const expiresAtDate = Date.parse(expiresAt);
-  if (!Number.isFinite(expiresAtDate) || expiresAtDate <= Date.now()) throw new Error("expired browser plan");
-  const actualCodeHash = createHash("sha256").update(code).digest("hex");
-  if (actualCodeHash !== expectedCodeHash) throw new Error("code hash mismatch");
-  const validation = validateBrowserCode(code, policyVersion);
-  if (!validation.valid) throw new Error(`policy violation: ${validation.violations.map((item) => item.category).join(",")}`);
-  const before = await snapshot();
-  if (!before || before.stateHash !== expectedStateHash) throw new Error("stale browser state");
-  const script = new vm.Script(`(async () => {\n${code}\n})()`);
-  await script.runInNewContext({ page }, { timeout: 30_000 });
-  return snapshot();
+  return executeBrowserPlan(page, snapshot, code, expectedStateHash, expectedCodeHash, policyVersion, expiresAt);
 }
 
 async function handle(command: Command): Promise<void> {
