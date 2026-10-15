@@ -245,6 +245,32 @@ test("rejects browser plans when safety review is unavailable", async () => {
   }
 });
 
+test("returns a timeout when browser safety review times out", async () => {
+  const reviewer: BrowserSafetyReviewer = {
+    async reviewBrowserPlan() {
+      return new Promise(() => undefined);
+    },
+  };
+  const app = await createTestApp(new FakeProvider(), reviewer);
+  try {
+    const response = await app.inject({
+      method: "POST",
+      url: "/browser-plans",
+      headers: { authorization: `Bearer ${serviceToken}`, "content-type": "application/json" },
+      payload: JSON.stringify({
+        goal: "Search for Botero",
+        page_state: { url: "https://example.test", state_hash: "test-state" },
+        capability_policy: { allowed_actions: ["navigate"] },
+        policy_version: "browser-navigation-v1",
+        session_id: "session-1",
+      }),
+    });
+    assert.equal(response.statusCode, 504);
+  } finally {
+    await app.close();
+  }
+});
+
 test("rejects browser plans that fail safety review", async () => {
   const reviewer: BrowserSafetyReviewer = {
     async reviewBrowserPlan() {

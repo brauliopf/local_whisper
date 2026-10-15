@@ -275,7 +275,9 @@ async function runWithDeadline<T>(
 
   const timeoutPromise = new Promise<never>((_, reject) => {
     const timer = setTimeout(() => reject(new ProviderTimeoutError()), timeoutMs);
-    controller.signal.addEventListener("abort", () => clearTimeout(timer), { once: true });
+    controller.signal.addEventListener("abort", () => {
+      if (!timedOut) clearTimeout(timer);
+    }, { once: true });
   });
   const disconnectPromise = new Promise<never>((_, reject) => {
     request.raw.once("aborted", () => reject(new ClientDisconnectedError()));
