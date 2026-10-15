@@ -50,6 +50,7 @@ test("rejects local, private, link-local, and non-http targets", () => {
   }
   assert.equal(valid("await page.goto('https://example.com');").valid, true);
   assert.equal(valid("await page.goto('http://fdic.gov');").valid, true);
+  assert.equal(valid("await page.goto('https://user:password@example.com');").valid, false);
 });
 
 test("rejects sensitive or non-search input", () => {

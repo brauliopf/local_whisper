@@ -284,7 +284,7 @@ async function handle(command: Command): Promise<void> {
   try {
     switch (command.type) {
       case "start": {
-        const pageSnapshot = await withDeadline(command.deadline_ms, start, () => { lifecycleGeneration += 1; });
+        const pageSnapshot = await withDeadline(command.deadline_ms, start, () => { lifecycleGeneration += 1; teardownInFlight = shutdown(); });
         reply(command, true, { status: "running", ...(pageSnapshot ? { snapshot: pageSnapshot } : {}) });
         return;
       }
@@ -293,7 +293,7 @@ async function handle(command: Command): Promise<void> {
           reply(command, true, { status: "paused" });
           return;
         }
-        const pageSnapshot = await withDeadline(command.deadline_ms, snapshot, () => { lifecycleGeneration += 1; });
+        const pageSnapshot = await withDeadline(command.deadline_ms, snapshot, () => { lifecycleGeneration += 1; teardownInFlight = shutdown(); });
         reply(command, true, { status: pageSnapshot ? "running" : "paused", ...(pageSnapshot ? { snapshot: pageSnapshot } : {}) });
         return;
       }
@@ -305,7 +305,7 @@ async function handle(command: Command): Promise<void> {
       case "resume": {
         paused = false;
         pauseGeneration += 1;
-        const pageSnapshot = await withDeadline(command.deadline_ms, snapshot, () => { lifecycleGeneration += 1; });
+        const pageSnapshot = await withDeadline(command.deadline_ms, snapshot, () => { lifecycleGeneration += 1; teardownInFlight = shutdown(); });
         reply(command, true, { status: "running", ...(pageSnapshot ? { snapshot: pageSnapshot } : {}) });
         return;
       }

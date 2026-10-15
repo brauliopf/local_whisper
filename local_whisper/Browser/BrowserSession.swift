@@ -201,7 +201,7 @@ final class BrowserSession {
             .appendingPathComponent(".runs", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let formatter = ISO8601DateFormatter()
-        let filename = "\(formatter.string(from: Date()).replacingOccurrences(of: ":", with: "-"))-\(response.planID).md"
+        let filename = "\(formatter.string(from: Date()).replacingOccurrences(of: ":", with: "-"))-\(UUID().uuidString).md"
         let contents = """
         # Browser plan
 
