@@ -58,7 +58,6 @@ const fakePlanner = {
       planID: "test-plan",
       policyVersion: "browser-policy-v1",
       stateHash: "test-state",
-      expiresAt: "2099-01-01T00:00:00.000Z",
     };
   },
 };
