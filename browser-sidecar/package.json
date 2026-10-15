@@ -9,6 +9,7 @@
     "smoke": "npm run build && ../scripts/browser_sidecar_smoke.sh"
   },
   "dependencies": {
+    "acorn": "8.19.0",
     "playwright": "^1.55.0"
   },
   "devDependencies": {
