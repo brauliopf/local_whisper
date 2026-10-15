@@ -21,6 +21,7 @@ import type {
   ImageMediaType,
 } from "./provider.js";
 import type { TranscriptionWorkflow } from "./transcription.js";
+import { validateBrowserCode } from "./browser-validator.js";
 import type { BrowserSafetyReviewer } from "./typesafe.js";
 
 const jpegHeader = Buffer.from([0xff, 0xd8, 0xff]);
@@ -371,6 +372,11 @@ export async function buildApp({
     if (plan === undefined || reply.raw.destroyed) {
       return;
     }
+    const deterministic = validateBrowserCode(plan.code, plan.policyVersion);
+    if (!deterministic.valid) {
+      request.log.info({ requestId: request.id, violations: deterministic.violations.map(({ category }) => category) }, "browser_deterministic_rejection");
+      throw new ApiError(422, "invalid_input", "The browser plan did not pass deterministic validation.");
+    }
     if (!browserSafetyReviewer) {
       throw new ApiError(503, "provider_failure", "Browser safety review is not configured.");
     }
@@ -380,13 +386,16 @@ export async function buildApp({
         goal: planRequest.goal,
         code: plan.code,
         capabilityPolicy: planRequest.capabilityPolicy,
-        deterministicViolations: [],
-        deterministicPassed: false,
+        deterministicViolations: deterministic.violations.map(({ category }) => category),
+        deterministicPassed: true,
         redactedPageState: planRequest.pageState,
       }, signal),
       config,
     );
-    if (!review?.approved) {
+    if (review === undefined || reply.raw.destroyed) {
+      return;
+    }
+    if (!review.approved) {
       throw new ApiError(422, "invalid_input", "The browser plan did not pass safety review.");
     }
     request.log.info({ requestId: request.id, checks: review.checks }, "browser_safety_review");
@@ -396,7 +405,7 @@ export async function buildApp({
       policy_version: plan.policyVersion,
       state_hash: plan.stateHash,
       expires_at: plan.expiresAt,
-      safety_review: "approved", 
+      safety_review: "approved",
       request_id: request.id,
     };
   });

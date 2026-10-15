@@ -76,7 +76,7 @@ const fakePlanner = {
     return {
       code: "await page.goto('https://example.test');",
       planID: "test-plan",
-      policyVersion: "browser-policy-v1",
+      policyVersion: "browser-navigation-v1",
       stateHash: "test-state",
       expiresAt: "2099-01-01T00:00:00.000Z",
     };
@@ -176,7 +176,7 @@ test("returns a schema-validated browser plan", async () => {
         goal: "Search for Botero",
         page_state: { url: "https://example.test", state_hash: "test-state" },
         capability_policy: { allowed_actions: ["navigate", "click"] },
-        policy_version: "browser-policy-v1",
+        policy_version: "browser-navigation-v1",
         session_id: "session-1",
       }),
     });
@@ -184,7 +184,7 @@ test("returns a schema-validated browser plan", async () => {
     assert.deepEqual(response.json(), {
       code: "await page.goto('https://example.test');",
       plan_id: "test-plan",
-      policy_version: "browser-policy-v1",
+      policy_version: "browser-navigation-v1",
       state_hash: "test-state",
       expires_at: "2099-01-01T00:00:00.000Z",
       safety_review: "approved",
@@ -206,7 +206,7 @@ test("rejects browser plans when safety review is unavailable", async () => {
         goal: "Search for Botero",
         page_state: { url: "https://example.test", state_hash: "test-state" },
         capability_policy: { allowed_actions: ["navigate"] },
-        policy_version: "browser-policy-v1",
+        policy_version: "browser-navigation-v1",
         session_id: "session-1",
       }),
     });
@@ -232,7 +232,7 @@ test("rejects browser plans that fail safety review", async () => {
         goal: "Search for Botero",
         page_state: { url: "https://example.test", state_hash: "test-state" },
         capability_policy: { allowed_actions: ["navigate"] },
-        policy_version: "browser-policy-v1",
+        policy_version: "browser-navigation-v1",
         session_id: "session-1",
       }),
     });
