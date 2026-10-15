@@ -131,10 +131,9 @@ function isBlockedHost(hostname: string): boolean {
   ].some(([prefix, mask]) => ipv4InRange(host, prefix as number[], mask as number));
 }
 
-function safeNavigationURL(node: any): boolean {
-  if (!isString(node)) return false;
+export function isSafeBrowserURL(value: string): boolean {
   try {
-    const url = new URL(node.value);
+    const url = new URL(value);
     return (url.protocol === "http:" || url.protocol === "https:") && !isBlockedHost(url.hostname);
   } catch {
     return false;
@@ -171,7 +170,7 @@ function validateCall(node: any, violations: BrowserViolation[]): void {
     return;
   }
 
-  if (chainText === "page.goto" && !safeNavigationURL(node.arguments?.[0])) {
+  if (chainText === "page.goto" && (!isString(node.arguments?.[0]) || !isSafeBrowserURL(node.arguments[0].value))) {
     violations.push(violation("target", "Navigation targets must be literal public HTTP(S) URLs."));
   }
   if (chainText === "page.mouse.wheel" && node.arguments?.length !== 2) {

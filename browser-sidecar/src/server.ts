@@ -9,7 +9,7 @@ import {
   type PageSnapshot,
 } from "./redaction.js";
 import { awaitAndClose } from "./shutdown.js";
-import { validateBrowserCode } from "./validator.js";
+import { isSafeBrowserURL, validateBrowserCode } from "./validator.js";
 
 const PROTOCOL_VERSION = 1;
 
@@ -23,6 +23,7 @@ type Command = {
   code_hash?: string;
   state_hash?: string;
   policy_version?: string;
+  expires_at?: string;
 };
 
 interface ControlData {
@@ -68,7 +69,7 @@ function isCommand(value: unknown): value is Command {
     && typeof command.session_id === "string"
     && (command.deadline_ms === undefined || (typeof command.deadline_ms === "number" && Number.isFinite(command.deadline_ms)))
     && ["start", "snapshot", "pause", "resume", "stop", "execute"].includes(command.type as string)
-    && (command.type !== "execute" || (typeof command.code === "string" && typeof command.code_hash === "string" && typeof command.state_hash === "string" && typeof command.policy_version === "string"));
+    && (command.type !== "execute" || (typeof command.code === "string" && typeof command.code_hash === "string" && typeof command.state_hash === "string" && typeof command.policy_version === "string" && typeof command.expires_at === "string"));
 }
 
 function invalidCommand(value: unknown): Command {
@@ -86,6 +87,7 @@ function errorCategory(error: unknown): string {
   if (message.includes("timeout")) return "operation_timeout";
   if (message.includes("code hash")) return "code_hash_mismatch";
   if (message.includes("stale browser state")) return "stale_browser_state";
+  if (message.includes("expired browser plan")) return "expired_browser_plan";
   if (message.includes("policy violation")) return "policy_violation";
   if (message.includes("launch") || message.includes("executable")) return "browser_unavailable";
   return "browser_operation_failed";
@@ -179,6 +181,14 @@ async function start(): Promise<PageSnapshot | undefined> {
         throw new Error("operation timeout");
       }
       const launchedContext = await launchedBrowser.newContext();
+      await launchedContext.route("**/*", async (route) => {
+        const url = route.request().url();
+        if (url === "about:blank" || isSafeBrowserURL(url)) {
+          await route.continue();
+        } else {
+          await route.abort("blockedbyclient");
+        }
+      });
       let acceptedPage: Page | undefined;
       launchedContext.on("page", (newPage) => {
         if (!acceptedPage) {
@@ -218,8 +228,10 @@ async function start(): Promise<PageSnapshot | undefined> {
   return snapshot();
 }
 
-async function execute(code: string, expectedStateHash: string, expectedCodeHash: string, policyVersion: string): Promise<PageSnapshot | undefined> {
+async function execute(code: string, expectedStateHash: string, expectedCodeHash: string, policyVersion: string, expiresAt: string): Promise<PageSnapshot | undefined> {
   if (!page) throw new Error("Browser tab is not running");
+  const expiresAtDate = Date.parse(expiresAt);
+  if (!Number.isFinite(expiresAtDate) || expiresAtDate <= Date.now()) throw new Error("expired browser plan");
   const actualCodeHash = createHash("sha256").update(code).digest("hex");
   if (actualCodeHash !== expectedCodeHash) throw new Error("code hash mismatch");
   const validation = validateBrowserCode(code, policyVersion);
@@ -277,7 +289,7 @@ async function handle(command: Command): Promise<void> {
       case "execute": {
         const pageSnapshot = await withDeadline(
           command.deadline_ms,
-          () => execute(command.code!, command.state_hash!, command.code_hash!, command.policy_version!),
+          () => execute(command.code!, command.state_hash!, command.code_hash!, command.policy_version!, command.expires_at!),
           () => { lifecycleGeneration += 1; },
         );
         reply(command, true, { status: "running", ...(pageSnapshot ? { snapshot: pageSnapshot } : {}) });

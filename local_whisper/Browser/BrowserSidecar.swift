@@ -132,13 +132,14 @@ final class BrowserSidecar {
         try send(type: "snapshot")
     }
 
-    func execute(code: String, stateHash: String, policyVersion: String) throws {
+    func execute(code: String, stateHash: String, policyVersion: String, expiresAt: String) throws {
         let codeHash = SHA256.hash(data: Data(code.utf8)).map { String(format: "%02x", $0) }.joined()
         try send(type: "execute", fields: [
             "code": code,
             "code_hash": codeHash,
             "state_hash": stateHash,
             "policy_version": policyVersion,
+            "expires_at": expiresAt,
         ])
     }
 

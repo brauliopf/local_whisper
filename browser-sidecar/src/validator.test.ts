@@ -16,6 +16,7 @@ test("rejects unsupported constructs and indirect access", () => {
     "label: await page.goto('https://example.com');",
     "class Exploit {}",
     "page.foo.click();",
+    "page.constructor.constructor('return process')();",
     "page['goto']('https://example.com');",
     "page.waitForFunction`document.body.innerText`;",
   ]) {
