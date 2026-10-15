@@ -21,6 +21,8 @@ import type {
   ImageMediaType,
 } from "./provider.js";
 import type { TranscriptionWorkflow } from "./transcription.js";
+import { validateBrowserCode } from "./browser-validator.js";
+import type { BrowserSafetyReviewer } from "./typesafe.js";
 
 const jpegHeader = Buffer.from([0xff, 0xd8, 0xff]);
 const pngHeader = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
@@ -30,6 +32,7 @@ export interface AppDependencies {
   config: AppConfig;
   provider: BackendProvider;
   planner: BrowserPlanner;
+  browserSafetyReviewer?: BrowserSafetyReviewer;
   transcriptionWorkflow: TranscriptionWorkflow;
 }
 
@@ -272,7 +275,9 @@ async function runWithDeadline<T>(
 
   const timeoutPromise = new Promise<never>((_, reject) => {
     const timer = setTimeout(() => reject(new ProviderTimeoutError()), timeoutMs);
-    controller.signal.addEventListener("abort", () => clearTimeout(timer), { once: true });
+    controller.signal.addEventListener("abort", () => {
+      if (!timedOut) clearTimeout(timer);
+    }, { once: true });
   });
   const disconnectPromise = new Promise<never>((_, reject) => {
     request.raw.once("aborted", () => reject(new ClientDisconnectedError()));
@@ -302,6 +307,7 @@ export async function buildApp({
   config,
   provider,
   planner,
+  browserSafetyReviewer,
   transcriptionWorkflow,
 }: AppDependencies): Promise<FastifyInstance> {
   const expectedTokenDigest = createHash("sha256").update(config.serviceToken).digest();
@@ -368,12 +374,40 @@ export async function buildApp({
     if (plan === undefined || reply.raw.destroyed) {
       return;
     }
+    const deterministic = validateBrowserCode(plan.code, plan.policyVersion);
+    if (!deterministic.valid) {
+      request.log.info({ requestId: request.id, violations: deterministic.violations.map(({ category }) => category) }, "browser_deterministic_rejection");
+      throw new ApiError(422, "invalid_input", "The browser plan did not pass deterministic validation.");
+    }
+    if (!browserSafetyReviewer) {
+      throw new ApiError(503, "provider_failure", "Browser safety review is not configured.");
+    }
+    const review = await runWithDeadline(
+      request,
+      (signal) => browserSafetyReviewer.reviewBrowserPlan({
+        goal: planRequest.goal,
+        code: plan.code,
+        capabilityPolicy: planRequest.capabilityPolicy,
+        deterministicViolations: deterministic.violations.map(({ category }) => category),
+        deterministicPassed: true,
+        redactedPageState: planRequest.pageState,
+      }, signal),
+      config,
+    );
+    if (review === undefined || reply.raw.destroyed) {
+      return;
+    }
+    if (!review.approved) {
+      throw new ApiError(422, "invalid_input", "The browser plan did not pass safety review.");
+    }
+    request.log.info({ requestId: request.id, checks: review.checks }, "browser_safety_review");
     return {
       code: plan.code,
       plan_id: plan.planID,
       policy_version: plan.policyVersion,
       state_hash: plan.stateHash,
       expires_at: plan.expiresAt,
+      safety_review: "approved",
       request_id: request.id,
     };
   });
