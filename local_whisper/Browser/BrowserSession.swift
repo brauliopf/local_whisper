@@ -52,7 +52,7 @@ final class BrowserSession {
         sidecar.onExit = { [weak self] status in
             guard let self else { return }
             if self.state != .idle && self.state != .stopped {
-                self.state = .stopped
+                self.transitionToStopped()
                 self.toast.show(message: "The browser helper stopped unexpectedly.", isError: true)
             }
             self.logger.info("browser sidecar exited status=\(status)")
@@ -114,14 +114,8 @@ final class BrowserSession {
 
     func stop() {
         guard isActive else { return }
+        transitionToStopped()
         sidecar.stop()
-        state = .stopped
-        snapshot = nil
-        planningTask?.cancel()
-        planningTask = nil
-        planningGeneration = UUID()
-        planningSessionID = nil
-        captureGoalWhenReady = false
         logger.info("browser step=stop status=ok")
     }
 
@@ -253,6 +247,14 @@ final class BrowserSession {
     }
 
     private func handle(_ response: BrowserSidecarResponse) {
+        if response.event == "browser_closed" {
+            guard state != .idle && state != .stopped else { return }
+            transitionToStopped()
+            toast.show(message: "The browser page was closed unexpectedly.", isError: true)
+            logger.info("browser step=primary_page_closed status=stopped")
+            return
+        }
+
         guard response.ok else {
             state = .blocked
             let message = response.error ?? "The browser helper rejected the request."
@@ -277,6 +279,16 @@ final class BrowserSession {
         }
         snapshot = response.snapshot ?? snapshot
         logger.info("browser step=sidecar_response status=ok state=\(response.status.rawValue, privacy: .public)")
+    }
+
+    private func transitionToStopped() {
+        state = .stopped
+        snapshot = nil
+        planningTask?.cancel()
+        planningTask = nil
+        planningGeneration = UUID()
+        planningSessionID = nil
+        captureGoalWhenReady = false
     }
 
     private func showFailure(_ error: Error) {

@@ -46,27 +46,46 @@ test("protocol stop uses the lifecycle shutdown barrier", () => {
   assert.ok(stop.indexOf("reply(command, true") < stop.indexOf("process.exit(0)"));
 });
 
-test("accepts one auxiliary page without replacing the primary page", () => {
-  assert.ok(source.includes("let auxiliaryPage: Page | undefined"));
-  assert.ok(source.includes("if (!auxiliaryPage)"));
-  assert.ok(source.includes("auxiliaryPage = newPage"));
-  assert.ok(source.includes("if (auxiliaryPage === newPage) auxiliaryPage = undefined"));
-  assert.ok(source.includes("newPage.close().catch"));
+test("request filtering checks every resolved address before continuing", () => {
+  assert.equal(source.includes('launchedContext.route("**/*"'), true);
+  assert.ok(source.includes("const hostname = url.hostname.replace(/^\\[|\\]$/g, \"\")"));
+  assert.ok(source.includes("lookup(hostname"));
+  assert.ok(source.includes("addresses.some"));
+  assert.ok(source.includes("isSafeBrowserURL(rawURL)"));
 });
 
-test("primary page closure invalidates ownership before browser teardown", () => {
+test("browser disconnect ownership is published before initialization awaits", () => {
+  const published = source.indexOf("browser = launchedBrowser;");
+  const attached = source.indexOf("attachBrowserDisconnectHandler(launchedBrowser);");
+  const initialization = source.indexOf("const launchedContext = await launchedBrowser.newContext();");
+  assert.ok(published >= 0);
+  assert.ok(published < attached);
+  assert.ok(attached < initialization);
+});
+
+test("browser disconnect clears only owned state and emits one lifecycle event", () => {
+  const start = source.indexOf("function attachBrowserDisconnectHandler");
+  const end = source.indexOf("async function start", start);
+  const disconnectHandler = source.slice(start, end);
+  assert.ok(disconnectHandler.includes('ownedBrowser.on("disconnected"'));
+  assert.ok(disconnectHandler.includes("if (browser !== ownedBrowser) return"));
+  assert.ok(disconnectHandler.includes("browser = undefined"));
+  assert.ok(disconnectHandler.includes("pageTracker = undefined"));
+  assert.ok(disconnectHandler.includes("lifecycleGeneration += 1"));
+  assert.ok(disconnectHandler.includes("sessionID = undefined"));
+  assert.ok(disconnectHandler.includes("if (!shuttingDown)"));
+  assert.equal((disconnectHandler.match(/event: "browser_closed"/g) ?? []).length, 1);
+  assert.equal((source.match(/\.on\("disconnected"/g) ?? []).length, 1);
+});
+
+test("primary page closure emits a lifecycle event before browser teardown", () => {
   const closeHandler = source.slice(source.indexOf("function handlePrimaryPageClose"), source.indexOf("async function handle(command"));
   assert.ok(closeHandler.includes("if (page !== closedPage) return"));
   assert.ok(closeHandler.includes("page = undefined"));
+  assert.ok(closeHandler.includes('event: "browser_closed"'));
   assert.ok(closeHandler.includes("lifecycleGeneration += 1"));
-  assert.ok(closeHandler.includes("if (!shuttingDown) teardownInFlight = shutdown()"));
-  assert.ok(source.includes('launchedPage.once("close", () => handlePrimaryPageClose(launchedPage))'));
-});
-
-test("request filtering keeps HTTP(S) checks without DNS blocking", () => {
-  assert.equal(source.includes('launchedContext.route("**/*"'), true);
-  assert.equal(source.includes("lookup("), false);
-  assert.ok(source.includes("isSafeBrowserURL(rawURL)"));
+  assert.ok(closeHandler.includes("sessionID = undefined"));
+  assert.ok(closeHandler.includes("if (!shuttingDown)"));
 });
 
 test("failed browser initialization closes local ownership", () => {

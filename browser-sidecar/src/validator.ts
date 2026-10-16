@@ -53,11 +53,90 @@ function memberChain(node: any): string[] | undefined {
   return names;
 }
 
+function isIPv4(hostname: string): boolean {
+  const parts = hostname.split(".").map(Number);
+  return parts.length === 4 && parts.every((part) => Number.isInteger(part) && part >= 0 && part <= 255);
+}
+
+function ipv4InRange(hostname: string, prefix: number[], mask: number): boolean {
+  if (!isIPv4(hostname)) return false;
+  const parts = hostname.split(".").map(Number);
+  let value = 0;
+  let target = 0;
+  for (let index = 0; index < 4; index += 1) {
+    value = (value << 8) | parts[index];
+    target = (target << 8) | (prefix[index] ?? 0);
+  }
+  const bits = mask === 0 ? 0 : (0xffffffff << (32 - mask)) >>> 0;
+  return ((value >>> 0) & bits) === ((target >>> 0) & bits);
+}
+
+function parseIPv6(host: string): bigint | undefined {
+  const parts = host.split("::");
+  if (parts.length > 2) return undefined;
+  const expand = (value: string): number[] => value ? value.split(":").flatMap((part) => {
+    if (!part.includes(".")) return [Number.parseInt(part, 16)];
+    const octets = part.split(".").map(Number);
+    return octets.length === 4 && octets.every((octet) => Number.isInteger(octet) && octet >= 0 && octet <= 255)
+      ? [(octets[0] << 8) | octets[1], (octets[2] << 8) | octets[3]]
+      : [Number.NaN];
+  }) : [];
+  const left = expand(parts[0]);
+  const right = parts.length === 2 ? expand(parts[1]) : [];
+  const missing = 8 - left.length - right.length;
+  if (missing < 0 || (parts.length === 1 && missing !== 0)) return undefined;
+  const groups = [...left, ...Array.from({ length: missing }, () => 0), ...right];
+  if (groups.length !== 8 || groups.some((group) => !Number.isInteger(group) || group < 0 || group > 0xffff)) return undefined;
+  return groups.reduce((value, group) => (value << 16n) | BigInt(group), 0n);
+}
+
+function ipv6InRange(value: bigint, prefix: bigint, bits: number): boolean {
+  const mask = bits === 0 ? 0n : ((1n << BigInt(bits)) - 1n) << BigInt(128 - bits);
+  return (value & mask) === (prefix & mask);
+}
+
+function isBlockedHost(hostname: string): boolean {
+  const host = hostname.toLowerCase().replace(/^\[|\]$/g, "").replace(/\.+$/, "");
+  if (host === "localhost" || host.endsWith(".localhost") || host === "broadcasthost") return true;
+  if (host.includes(":")) {
+    const value = parseIPv6(host);
+    if (value === undefined) return true;
+    if (host.startsWith("::ffff:") || ipv6InRange(value, 0n, 96) ||
+        ipv6InRange(value, 0xfc00n << 112n, 7) ||
+        ipv6InRange(value, 0xfe80n << 112n, 10) ||
+        ipv6InRange(value, 0xffn << 120n, 8) ||
+        ipv6InRange(value, 0x20010db8n << 96n, 32) ||
+        ipv6InRange(value, 0xffffn << 112n, 16) ||
+        ipv6InRange(value, 0xffffn << 32n, 96)) return true;
+    const mapped = Number(value >> 32n & 0xffffffffn);
+    if (Number(value >> 32n) === 0xffff || Number(value >> 32n) === 0) {
+      if (isBlockedHost(`${mapped >>> 24}.${(mapped >>> 16) & 255}.${(mapped >>> 8) & 255}.${mapped & 255}`)) return true;
+    }
+    return false;
+  }
+  return [
+    [[0, 0, 0, 0], 8],
+    [[10, 0, 0, 0], 8],
+    [[100, 64, 0, 0], 10],
+    [[127, 0, 0, 0], 8],
+    [[169, 254, 0, 0], 16],
+    [[172, 16, 0, 0], 12],
+    [[192, 0, 0, 0], 24],
+    [[192, 0, 2, 0], 24],
+    [[192, 168, 0, 0], 16],
+    [[198, 18, 0, 0], 15],
+    [[198, 51, 100, 0], 24],
+    [[203, 0, 113, 0], 24],
+    [[224, 0, 0, 0], 4],
+    [[240, 0, 0, 0], 4],
+    [[255, 0, 0, 0], 8],
+  ].some(([prefix, mask]) => ipv4InRange(host, prefix as number[], mask as number));
+}
 
 export function isSafeBrowserURL(value: string): boolean {
   try {
     const url = new URL(value);
-    return (url.protocol === "http:" || url.protocol === "https:") && !url.username && !url.password;
+    return (url.protocol === "http:" || url.protocol === "https:") && !url.username && !url.password && !isBlockedHost(url.hostname);
   } catch {
     return false;
   }
