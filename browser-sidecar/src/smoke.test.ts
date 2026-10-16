@@ -51,7 +51,16 @@ test("accepts one auxiliary page without replacing the primary page", () => {
   assert.ok(source.includes("if (!auxiliaryPage)"));
   assert.ok(source.includes("auxiliaryPage = newPage"));
   assert.ok(source.includes("if (auxiliaryPage === newPage) auxiliaryPage = undefined"));
-  assert.ok(source.includes('newPage.close()'));
+  assert.ok(source.includes("newPage.close().catch"));
+});
+
+test("primary page closure invalidates ownership before browser teardown", () => {
+  const closeHandler = source.slice(source.indexOf("function handlePrimaryPageClose"), source.indexOf("async function handle(command"));
+  assert.ok(closeHandler.includes("if (page !== closedPage) return"));
+  assert.ok(closeHandler.includes("page = undefined"));
+  assert.ok(closeHandler.includes("lifecycleGeneration += 1"));
+  assert.ok(closeHandler.includes("if (!shuttingDown) teardownInFlight = shutdown()"));
+  assert.ok(source.includes('launchedPage.once("close", () => handlePrimaryPageClose(launchedPage))'));
 });
 
 test("request filtering keeps HTTP(S) checks without DNS blocking", () => {

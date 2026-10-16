@@ -205,7 +205,7 @@ async function start(): Promise<PageSnapshot | undefined> {
           process.stderr.write("Accepted auxiliary user window\n");
           return;
         }
-        void newPage.close();
+        void newPage.close().catch(() => undefined);
         process.stderr.write("Rejected unexpected additional browser tab\n");
       });
       const launchedPage = await launchedContext.newPage();
@@ -215,6 +215,8 @@ async function start(): Promise<PageSnapshot | undefined> {
       }
       context = launchedContext;
       page = launchedPage;
+      launchedPage.once("close", () => handlePrimaryPageClose(launchedPage));
+      if (launchedPage.isClosed()) handlePrimaryPageClose(launchedPage);
     } catch (error) {
       if (browser === launchedBrowser) {
         browser = undefined;
@@ -242,6 +244,17 @@ async function start(): Promise<PageSnapshot | undefined> {
 async function execute(code: string, expectedStateHash: string, expectedCodeHash: string, policyVersion: string, expiresAt: string): Promise<PageSnapshot | undefined> {
   if (!page) throw new Error("Browser tab is not running");
   return executeBrowserPlan(page, snapshot, code, expectedStateHash, expectedCodeHash, policyVersion, expiresAt);
+}
+
+function handlePrimaryPageClose(closedPage: Page): void {
+  if (page !== closedPage) return;
+  page = undefined;
+  context = undefined;
+  auxiliaryPage = undefined;
+  paused = false;
+  pauseGeneration += 1;
+  lifecycleGeneration += 1;
+  if (!shuttingDown) teardownInFlight = shutdown();
 }
 
 async function handle(command: Command): Promise<void> {

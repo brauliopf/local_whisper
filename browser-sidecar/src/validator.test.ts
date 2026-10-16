@@ -25,7 +25,7 @@ test("rejects unsupported constructs and indirect access", () => {
   }
 });
 
-test("allows private HTTP(S) targets but rejects unsafe URL forms", () => {
+test("allows HTTP(S) targets but rejects unsafe URL forms", () => {
   for (const url of [
     "http://localhost:3000",
     "http://127.0.0.1",
