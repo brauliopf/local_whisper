@@ -7,7 +7,7 @@ final class AppCoordinator {
         didSet {
             encouragement.openSettings = openSettings
             voice.openSettings = openSettings
-            browserVoiceGoal.openSettings = openSettings
+            browserCommands.openSettings = openSettings
             screenshot.openSettings = openSettings
         }
     }
@@ -20,7 +20,7 @@ final class AppCoordinator {
     let tokenState: ServiceTokenState
     private let encouragement: Encouragement
     private let voice: VoiceTranscription
-    private let browserVoiceGoal: BrowserVoiceGoal
+    private let browserCommands: BrowserCommandCoordinator
     private let screenshot: ScreenshotOCR
     let countdown: Countdown
     let browser: BrowserSession
@@ -40,22 +40,20 @@ final class AppCoordinator {
         self.tokenState = ServiceTokenState(keychain: keychain)
         self.encouragement = Encouragement(backend: backend, tokenState: tokenState, toast: toast)
         self.voice = VoiceTranscription(backend: backend, tokenState: tokenState, toast: toast)
-        self.browserVoiceGoal = BrowserVoiceGoal(backend: backend, tokenState: tokenState, toast: toast)
         self.screenshot = ScreenshotOCR(backend: backend, tokenState: tokenState, toast: toast)
         self.countdown = Countdown(toast: toast)
         self.browser = BrowserSession(toast: toast, sidecar: BrowserSidecar(), backend: backend, tokenState: tokenState)
-
-        browser.onReadyForGoal = { [weak self] in
-            self?.browserVoiceGoal.toggle()
-        }
-        browserVoiceGoal.onGoal = { [weak self] goal in
-            self?.browser.requestPlan(for: goal)
-        }
+        self.browserCommands = BrowserCommandCoordinator(
+            browser: browser,
+            backend: backend,
+            tokenState: tokenState,
+            toast: toast
+        )
 
         voice.setEscapeEnabled = { [weak self] enabled in
             self?.hotkeys.setEscapeEnabled(enabled)
         }
-        browserVoiceGoal.setEscapeEnabled = { [weak self] enabled in
+        browserCommands.setEscapeEnabled = { [weak self] enabled in
             self?.hotkeys.setEscapeEnabled(enabled)
         }
         hotkeys.onEncouragement = { [weak self] in
@@ -78,7 +76,7 @@ final class AppCoordinator {
         }
         hotkeys.onEscape = { [weak self] in
             self?.voice.cancelRecording()
-            self?.browserVoiceGoal.cancel()
+            self?.browserCommands.cancel()
         }
     }
 
@@ -126,18 +124,12 @@ final class AppCoordinator {
     }
 
     func browseWeb() {
-        if browserVoiceGoal.isRecording {
-            browserVoiceGoal.toggle()
-            return
-        }
-
         voice.cancelRecording(showToast: false)
         voice.cancelInFlightWork()
-        browserVoiceGoal.cancelInFlightWork()
         screenshot.cancel()
         encouragement.cancel()
 
-        browser.browseWeb()
+        browserCommands.toggle()
     }
 
     func showBrowserPlan(goal: String, response: BackendBrowserPlanResponse) {
@@ -155,8 +147,7 @@ final class AppCoordinator {
     }
 
     func toggleTranscription() {
-        browserVoiceGoal.cancel(showToast: false)
-        browserVoiceGoal.cancelInFlightWork()
+        browserCommands.cancel()
         screenshot.cancel()
         encouragement.cancel()
         voice.toggle()
@@ -165,8 +156,7 @@ final class AppCoordinator {
     func readScreenshot() {
         voice.cancelRecording(showToast: false)
         voice.cancelInFlightWork()
-        browserVoiceGoal.cancel(showToast: false)
-        browserVoiceGoal.cancelInFlightWork()
+        browserCommands.cancel()
         encouragement.cancel()
         screenshot.captureAndRead()
     }
