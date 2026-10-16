@@ -24,7 +24,8 @@ enum BrowserSidecarStatus: String, Codable, Sendable {
 }
 
 struct BrowserSidecarResponse: Codable, Sendable {
-    let id: String
+    let id: String?
+    let event: String? = nil
     let version: Int
     let sessionID: String
     let ok: Bool
@@ -33,7 +34,7 @@ struct BrowserSidecarResponse: Codable, Sendable {
     let error: String?
 
     enum CodingKeys: String, CodingKey {
-        case id, version, ok, status, snapshot, error
+        case id, event, version, ok, status, snapshot, error
         case sessionID = "session_id"
     }
 }
@@ -196,9 +197,17 @@ final class BrowserSidecar {
             guard
                 let response = try? JSONDecoder().decode(BrowserSidecarResponse.self, from: line),
                 response.version == Self.protocolVersion,
-                response.sessionID == sessionID,
-                let request = pending.removeValue(forKey: response.id)
+                response.sessionID == sessionID
             else {
+                continue
+            }
+            if response.event == "browser_closed" {
+                pending.values.forEach { $0.cancel() }
+                pending.removeAll()
+                onResponse?(response)
+                continue
+            }
+            guard let id = response.id, let request = pending.removeValue(forKey: id) else {
                 continue
             }
             request.cancel()

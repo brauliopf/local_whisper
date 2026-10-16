@@ -25,7 +25,7 @@ test("rejects unsupported constructs and indirect access", () => {
   }
 });
 
-test("rejects local, private, link-local, and non-http targets", () => {
+test("rejects local, private, link-local, reserved, and non-http targets", () => {
   for (const url of [
     "http://localhost:3000",
     "http://localhost.",
@@ -33,6 +33,7 @@ test("rejects local, private, link-local, and non-http targets", () => {
     "http://10.0.0.1",
     "http://172.16.0.1",
     "http://192.168.1.1",
+    "http://192.0.2.1",
     "http://169.254.169.254",
     "http://[::1]",
     "http://[::]",
@@ -44,6 +45,7 @@ test("rejects local, private, link-local, and non-http targets", () => {
     "http://[ff02::1]",
     "http://[2001:db8::1]",
     "http://[fd00::1]",
+    "http://240.0.0.1",
     "http://255.255.255.255",
     "file:///etc/passwd",
   ]) {

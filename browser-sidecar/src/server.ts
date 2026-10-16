@@ -11,6 +11,7 @@ import {
 import { awaitAndClose } from "./shutdown.js";
 import { isSafeBrowserURL } from "./validator.js";
 import { executeBrowserPlan } from "./execution.js";
+import { BrowserPageTracker } from "./page-tracker.js";
 
 const PROTOCOL_VERSION = 1;
 
@@ -44,6 +45,7 @@ interface SidecarState {
 let browser: Browser | undefined;
 let context: BrowserContext | undefined;
 let page: Page | undefined;
+let pageTracker: BrowserPageTracker<Page> | undefined;
 let paused = false;
 let pauseGeneration = 0;
 let sessionID: string | undefined;
@@ -163,6 +165,31 @@ async function snapshot(): Promise<PageSnapshot | undefined> {
   };
 }
 
+function attachBrowserDisconnectHandler(ownedBrowser: Browser): void {
+  ownedBrowser.on("disconnected", () => {
+    if (browser !== ownedBrowser) return;
+    const disconnectedSessionID = sessionID;
+    browser = undefined;
+    context = undefined;
+    page = undefined;
+    pageTracker?.clear();
+    pageTracker = undefined;
+    paused = false;
+    pauseGeneration += 1;
+    lifecycleGeneration += 1;
+    sessionID = undefined;
+    if (!shuttingDown) {
+      process.stdout.write(`${JSON.stringify({
+        event: "browser_closed",
+        version: PROTOCOL_VERSION,
+        session_id: disconnectedSessionID,
+        ok: true,
+        status: "stopped",
+      })}\n`);
+    }
+  });
+}
+
 async function start(): Promise<PageSnapshot | undefined> {
   shuttingDown = false;
   if (!browser) {
@@ -178,6 +205,7 @@ async function start(): Promise<PageSnapshot | undefined> {
     // Publish ownership immediately so EOF/signal shutdown can close a browser
     // while context/page initialization is still in flight.
     browser = launchedBrowser;
+    attachBrowserDisconnectHandler(launchedBrowser);
     try {
       if (generation !== lifecycleGeneration || shuttingDown) {
         throw new Error("operation timeout");
@@ -195,7 +223,8 @@ async function start(): Promise<PageSnapshot | undefined> {
             await route.abort("blockedbyclient");
             return;
           }
-          const addresses = await lookup(url.hostname, { all: true, verbatim: true });
+          const hostname = url.hostname.replace(/^\[|\]$/g, "");
+          const addresses = await lookup(hostname, { all: true, verbatim: true });
           if (addresses.length === 0 || addresses.some(({ address }) => {
             const host = address.includes(":") ? `[${address}]` : address;
             return !isSafeBrowserURL(`${url.protocol}//${host}`);
@@ -208,40 +237,34 @@ async function start(): Promise<PageSnapshot | undefined> {
           await route.abort("blockedbyclient");
         }
       });
-      let acceptedPage: Page | undefined;
+      const tracker = new BrowserPageTracker<Page>((closedPage) => handlePrimaryPageClose(closedPage));
+      pageTracker = tracker;
       launchedContext.on("page", (newPage) => {
-        if (!acceptedPage) {
-          acceptedPage = newPage;
-          return;
-        }
-        void newPage.close();
-        process.stderr.write("Rejected unexpected additional browser tab\n");
+        const role = tracker.observe(newPage);
+        if (role === "auxiliary") process.stderr.write("Accepted auxiliary user window\n");
+        if (role === "rejected") process.stderr.write("Rejected unexpected additional browser tab\n");
       });
       const launchedPage = await launchedContext.newPage();
-      acceptedPage = launchedPage;
+      tracker.claimPrimary(launchedPage);
       if (generation !== lifecycleGeneration || shuttingDown) {
         throw new Error("operation timeout");
       }
       context = launchedContext;
       page = launchedPage;
+      if (launchedPage.isClosed()) handlePrimaryPageClose(launchedPage);
     } catch (error) {
       if (browser === launchedBrowser) {
         browser = undefined;
         context = undefined;
         page = undefined;
+        pageTracker?.clear();
+        pageTracker = undefined;
       }
       await awaitAndClose(undefined, launchedBrowser, async (owned) => {
         await owned.close();
       });
       throw error;
     }
-    browser.on("disconnected", () => {
-      browser = undefined;
-      context = undefined;
-      page = undefined;
-      paused = false;
-      pauseGeneration += 1;
-    });
   }
   if (!page) throw new Error("Browser tab is unavailable");
   return snapshot();
@@ -250,6 +273,29 @@ async function start(): Promise<PageSnapshot | undefined> {
 async function execute(code: string, expectedStateHash: string, expectedCodeHash: string, policyVersion: string, expiresAt: string): Promise<PageSnapshot | undefined> {
   if (!page) throw new Error("Browser tab is not running");
   return executeBrowserPlan(page, snapshot, code, expectedStateHash, expectedCodeHash, policyVersion, expiresAt);
+}
+
+function handlePrimaryPageClose(closedPage: Page): void {
+  if (page !== closedPage) return;
+  const closedSessionID = sessionID;
+  page = undefined;
+  context = undefined;
+  pageTracker?.clear();
+  pageTracker = undefined;
+  paused = false;
+  pauseGeneration += 1;
+  lifecycleGeneration += 1;
+  sessionID = undefined;
+  if (!shuttingDown) {
+    process.stdout.write(`${JSON.stringify({
+      event: "browser_closed",
+      version: PROTOCOL_VERSION,
+      session_id: closedSessionID,
+      ok: true,
+      status: "stopped",
+    })}\n`);
+    teardownInFlight = shutdown();
+  }
 }
 
 async function handle(command: Command): Promise<void> {
@@ -352,6 +398,8 @@ const shutdown = async (): Promise<void> => {
   browser = undefined;
   context = undefined;
   page = undefined;
+  pageTracker?.clear();
+  pageTracker = undefined;
 };
 
 input.on("close", () => {
