@@ -46,6 +46,20 @@ test("protocol stop uses the lifecycle shutdown barrier", () => {
   assert.ok(stop.indexOf("reply(command, true") < stop.indexOf("process.exit(0)"));
 });
 
+test("accepts one auxiliary page without replacing the primary page", () => {
+  assert.ok(source.includes("let auxiliaryPage: Page | undefined"));
+  assert.ok(source.includes("if (!auxiliaryPage)"));
+  assert.ok(source.includes("auxiliaryPage = newPage"));
+  assert.ok(source.includes("if (auxiliaryPage === newPage) auxiliaryPage = undefined"));
+  assert.ok(source.includes('newPage.close()'));
+});
+
+test("request filtering keeps HTTP(S) checks without DNS blocking", () => {
+  assert.equal(source.includes('launchedContext.route("**/*"'), true);
+  assert.equal(source.includes("lookup("), false);
+  assert.ok(source.includes("isSafeBrowserURL(rawURL)"));
+});
+
 test("failed browser initialization closes local ownership", () => {
   const initialization = source.slice(source.indexOf("const launchPromise"), source.indexOf("context.on(\"page\""));
   assert.ok(initialization.includes("browser = launchedBrowser"));

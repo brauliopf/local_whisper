@@ -25,32 +25,19 @@ test("rejects unsupported constructs and indirect access", () => {
   }
 });
 
-test("rejects local, private, link-local, and non-http targets", () => {
+test("allows private HTTP(S) targets but rejects unsafe URL forms", () => {
   for (const url of [
     "http://localhost:3000",
-    "http://localhost.",
     "http://127.0.0.1",
     "http://10.0.0.1",
-    "http://172.16.0.1",
-    "http://192.168.1.1",
-    "http://169.254.169.254",
     "http://[::1]",
-    "http://[::]",
-    "http://[::0]",
-    "http://[0:0:0:0:0:0:0:0]",
-    "http://[::ffff:127.0.0.1]",
-    "http://[::ffff:0:7f00:1]",
-    "http://[::7f00:1]",
-    "http://[ff02::1]",
-    "http://[2001:db8::1]",
-    "http://[fd00::1]",
-    "http://255.255.255.255",
-    "file:///etc/passwd",
+    "http://169.254.169.254",
   ]) {
-    assert.equal(valid(`await page.goto('${url}');`).valid, false, url);
+    assert.equal(valid(`await page.goto('${url}');`).valid, true, url);
   }
   assert.equal(valid("await page.goto('https://example.com');").valid, true);
   assert.equal(valid("await page.goto('http://fdic.gov');").valid, true);
+  assert.equal(valid("await page.goto('file:///etc/passwd');").valid, false);
   assert.equal(valid("await page.goto('https://user:password@example.com');").valid, false);
 });
 

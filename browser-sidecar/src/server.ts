@@ -1,6 +1,5 @@
 import { createHash } from "node:crypto";
 import { createInterface } from "node:readline";
-import { lookup } from "node:dns/promises";
 import { chromium, type Browser, type BrowserContext, type Page } from "playwright";
 import {
   redactControl,
@@ -44,6 +43,7 @@ interface SidecarState {
 let browser: Browser | undefined;
 let context: BrowserContext | undefined;
 let page: Page | undefined;
+let auxiliaryPage: Page | undefined;
 let paused = false;
 let pauseGeneration = 0;
 let sessionID: string | undefined;
@@ -185,33 +185,24 @@ async function start(): Promise<PageSnapshot | undefined> {
       const launchedContext = await launchedBrowser.newContext();
       await launchedContext.route("**/*", async (route) => {
         const rawURL = route.request().url();
-        if (rawURL === "about:blank") {
+        if (rawURL === "about:blank" || isSafeBrowserURL(rawURL)) {
           await route.continue();
           return;
         }
-        try {
-          const url = new URL(rawURL);
-          if (!isSafeBrowserURL(rawURL)) {
-            await route.abort("blockedbyclient");
-            return;
-          }
-          const addresses = await lookup(url.hostname, { all: true, verbatim: true });
-          if (addresses.length === 0 || addresses.some(({ address }) => {
-            const host = address.includes(":") ? `[${address}]` : address;
-            return !isSafeBrowserURL(`${url.protocol}//${host}`);
-          })) {
-            await route.abort("blockedbyclient");
-            return;
-          }
-          await route.continue();
-        } catch {
-          await route.abort("blockedbyclient");
-        }
+        await route.abort("blockedbyclient");
       });
       let acceptedPage: Page | undefined;
       launchedContext.on("page", (newPage) => {
         if (!acceptedPage) {
           acceptedPage = newPage;
+          return;
+        }
+        if (!auxiliaryPage) {
+          auxiliaryPage = newPage;
+          newPage.once("close", () => {
+            if (auxiliaryPage === newPage) auxiliaryPage = undefined;
+          });
+          process.stderr.write("Accepted auxiliary user window\n");
           return;
         }
         void newPage.close();
@@ -239,6 +230,7 @@ async function start(): Promise<PageSnapshot | undefined> {
       browser = undefined;
       context = undefined;
       page = undefined;
+      auxiliaryPage = undefined;
       paused = false;
       pauseGeneration += 1;
     });
@@ -352,6 +344,7 @@ const shutdown = async (): Promise<void> => {
   browser = undefined;
   context = undefined;
   page = undefined;
+  auxiliaryPage = undefined;
 };
 
 input.on("close", () => {
