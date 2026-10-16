@@ -17,7 +17,11 @@ final class BrowserSession {
     private(set) var state: State = .idle
     private(set) var snapshot: BrowserPageSnapshot?
     var onPlan: ((String, BackendBrowserPlanResponse) -> Void)?
-    var onReadyForGoal: (() -> Void)?
+    var onCommandFinished: ((Bool) -> Void)?
+
+    private(set) var isCommandBusy = false
+    private var awaitingExecutionResponse = false
+    private var snapshotCompletion: ((Result<BrowserPageSnapshot, Error>) -> Void)?
 
     private let toast: ToastPresenter
     private let sidecar: BrowserSidecar
@@ -27,7 +31,6 @@ final class BrowserSession {
     private var planningSessionID: String?
     private var planningTask: Task<Void, Never>?
     private var planningGeneration = UUID()
-    private var captureGoalWhenReady = false
 
     private static let policyVersion = "browser-navigation-v1"
     private static let capabilityPolicy: [String: Any] = [
@@ -76,15 +79,13 @@ final class BrowserSession {
 
         state = .launching
         planningSessionID = UUID().uuidString
-        captureGoalWhenReady = true
-        logger.info("browser step=command_received status=accepted")
+        logger.info("browser step=session_start status=accepted")
         do {
             try sidecar.start()
             try sidecar.startBrowser()
             toast.show(message: "Browser ready.", isError: false)
         } catch {
             state = .stopped
-            captureGoalWhenReady = false
             toast.show(message: error.localizedDescription, isError: true)
             logger.error("browser step=launch status=failed category=helper_unavailable")
         }
@@ -121,11 +122,17 @@ final class BrowserSession {
         planningTask = nil
         planningGeneration = UUID()
         planningSessionID = nil
-        captureGoalWhenReady = false
+        isCommandBusy = false
+        awaitingExecutionResponse = false
+        snapshotCompletion = nil
         logger.info("browser step=stop status=ok")
     }
 
     func requestPlan(for goal: String) {
+        guard !isCommandBusy else {
+            toast.show(message: "Browser is still working on the previous command.", isError: false)
+            return
+        }
         guard state == .running, let snapshot, let sessionID = planningSessionID else {
             toast.show(message: "Start the browser before creating a plan.", isError: true)
             return
@@ -142,6 +149,7 @@ final class BrowserSession {
         planningTask?.cancel()
         planningGeneration = UUID()
         let requestGeneration = planningGeneration
+        isCommandBusy = true
 
         do {
             let encoder = JSONEncoder()
@@ -198,16 +206,19 @@ final class BrowserSession {
                         logger.error("browser step=plan_file status=failed category=storage_error")
                     }
                     try sidecar.execute(code: response.code, stateHash: response.stateHash, policyVersion: response.policyVersion, expiresAt: response.expiresAt)
+                    awaitingExecutionResponse = true
                     toast.show(message: "Executing browser plan…", isError: false, autoDismiss: false)
                 } catch is CancellationError {
-                    return
+                    finishCommand(success: false)
                 } catch {
                     logger.error("browser step=plan_request status=failed category=backend_error")
                     toast.show(message: error.localizedDescription, isError: true)
+                    finishCommand(success: false)
                 }
             }
         } catch {
             toast.show(message: "Couldn't prepare the browser snapshot.", isError: true)
+            finishCommand(success: false)
         }
     }
 
@@ -242,21 +253,34 @@ final class BrowserSession {
         try contents.write(to: directory.appendingPathComponent(filename), atomically: true, encoding: .utf8)
     }
 
-    func requestSnapshot() {
-        guard state == .running else { return }
+    func requestSnapshot(completion: @escaping (Result<BrowserPageSnapshot, Error>) -> Void) {
+        guard state == .running else {
+            completion(.failure(BackendError.invalidResponse))
+            return
+        }
+        snapshotCompletion = completion
         do {
             try sidecar.snapshot()
             logger.info("browser step=snapshot_request status=sent")
         } catch {
-            showFailure(error)
+            snapshotCompletion = nil
+            completion(.failure(error))
         }
     }
 
     private func handle(_ response: BrowserSidecarResponse) {
         guard response.ok else {
-            state = .blocked
+            let commandWasActive = isCommandBusy || snapshotCompletion != nil
+            state = commandWasActive
+                ? (response.status == .paused ? .pausedForUser : .running)
+                : .blocked
             let message = response.error ?? "The browser helper rejected the request."
             toast.show(message: message, isError: true)
+            if let completion = snapshotCompletion {
+                snapshotCompletion = nil
+                completion(.failure(BackendError.apiError(code: "sidecar_error", message: message)))
+            }
+            finishCommand(success: false)
             logger.error("browser step=sidecar_response status=failed category=\(response.status.rawValue, privacy: .public)")
             return
         }
@@ -266,17 +290,32 @@ final class BrowserSession {
             state = .idle
         case .running:
             state = .running
-            if captureGoalWhenReady {
-                captureGoalWhenReady = false
-                onReadyForGoal?()
-            }
         case .paused:
             state = .pausedForUser
         case .stopped:
             state = .stopped
         }
-        snapshot = response.snapshot ?? snapshot
+        if let responseSnapshot = response.snapshot {
+            snapshot = responseSnapshot
+            if let completion = snapshotCompletion {
+                snapshotCompletion = nil
+                completion(.success(responseSnapshot))
+            }
+        } else if let completion = snapshotCompletion {
+            snapshotCompletion = nil
+            completion(.failure(BackendError.invalidResponse))
+        }
+        if awaitingExecutionResponse {
+            finishCommand(success: true)
+        }
         logger.info("browser step=sidecar_response status=ok state=\(response.status.rawValue, privacy: .public)")
+    }
+
+    private func finishCommand(success: Bool) {
+        guard isCommandBusy else { return }
+        isCommandBusy = false
+        awaitingExecutionResponse = false
+        onCommandFinished?(success)
     }
 
     private func showFailure(_ error: Error) {
