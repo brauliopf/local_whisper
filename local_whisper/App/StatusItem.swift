@@ -9,6 +9,7 @@ final class StatusItem: NSObject {
     private var menuState: String?
     private var settingsWindow: NSWindow?
     private var planPreviewWindow: NSWindow?
+    private var groceryWindow: NSWindow?
 
     init(coordinator: AppCoordinator) {
         self.coordinator = coordinator
@@ -69,6 +70,7 @@ final class StatusItem: NSObject {
         menu.addItem(menuItem("Transcribe", key: "w", action: #selector(transcribe)))
         menu.addItem(menuItem("Read screenshot", key: "r", action: #selector(readScreenshot)))
         menu.addItem(menuItem("Browse web", key: "a", action: #selector(browseWeb)))
+        menu.addItem(menuItem("Add grocery item", key: nil, action: #selector(addGroceryItem)))
         if hasPlanPreview {
             menu.addItem(menuItem("Preview Plan", key: nil, action: #selector(openPlanPreview)))
         }
@@ -120,6 +122,32 @@ final class StatusItem: NSObject {
 
     @objc private func browseWeb() {
         coordinator.browseWeb()
+    }
+
+    @objc private func addGroceryItem() {
+        if groceryWindow == nil {
+            let window = NSWindow(
+                contentRect: NSRect(x: 0, y: 0, width: 440, height: 220),
+                styleMask: [.titled, .closable],
+                backing: .buffered,
+                defer: false
+            )
+            window.title = "Add grocery item"
+            window.isReleasedWhenClosed = false
+            window.center()
+            groceryWindow = window
+        }
+        groceryWindow?.contentView = NSHostingView(rootView: GroceryRequestView(
+            onSubmit: { [weak self] request in
+                self?.coordinator.startGrocery(request: request)
+                self?.groceryWindow?.orderOut(nil)
+            },
+            onCancel: { [weak self] in self?.groceryWindow?.orderOut(nil) }
+        ))
+        guard let groceryWindow else { return }
+        NSApp.activate(ignoringOtherApps: true)
+        groceryWindow.collectionBehavior.insert(.moveToActiveSpace)
+        groceryWindow.makeKeyAndOrderFront(nil)
     }
 
     @objc private func openPlanPreview() {

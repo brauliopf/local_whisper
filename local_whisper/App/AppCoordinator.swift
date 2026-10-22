@@ -24,6 +24,7 @@ final class AppCoordinator {
     private let screenshot: ScreenshotOCR
     let countdown: Countdown
     let browser: BrowserSession
+    let grocery: GroceryTaskCoordinator
     private var didFinishLaunching = false
 
     convenience init() {
@@ -44,6 +45,7 @@ final class AppCoordinator {
         self.screenshot = ScreenshotOCR(backend: backend, tokenState: tokenState, toast: toast)
         self.countdown = Countdown(toast: toast)
         self.browser = BrowserSession(toast: toast, sidecar: BrowserSidecar(), backend: backend, tokenState: tokenState)
+        self.grocery = GroceryTaskCoordinator()
 
         browser.onReadyForGoal = { [weak self] in
             self?.browserVoiceGoal.toggle()
@@ -123,6 +125,17 @@ final class AppCoordinator {
                 isError: true
             )
         }
+    }
+
+    func startGrocery(request: String) {
+        voice.cancelRecording(showToast: false)
+        voice.cancelInFlightWork()
+        browserVoiceGoal.cancel(showToast: false)
+        browserVoiceGoal.cancelInFlightWork()
+        screenshot.cancel()
+        encouragement.cancel()
+        grocery.start(request: request, signedIn: false)
+        browser.browseWeb()
     }
 
     func browseWeb() {
