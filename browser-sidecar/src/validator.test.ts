@@ -4,18 +4,25 @@ import { BROWSER_POLICY_VERSION, validateBrowserCode } from "./validator.js";
 
 const valid = (code: string) => validateBrowserCode(code, BROWSER_POLICY_VERSION);
 
-test("allows public navigation and search scrolling", () => {
+test("allows public navigation and generic semantic actions", () => {
   assert.equal(valid("await page.goto('https://example.com');").valid, true);
   assert.equal(valid("await page.mouse.wheel(0, 1000);").valid, true);
-  assert.equal(valid("await page.getByRole('searchbox').fill('Botero');").valid, true);
+  assert.equal(valid("await page.getByRole('checkbox', { name: 'Agree' }).check();").valid, true);
+  assert.equal(valid("await page.getByRole('button', { name: 'Next' }).click();").valid, true);
+  assert.equal(valid("await page.getByLabel('City').fill('Portland');").valid, true);
+  assert.equal(valid("await page.getByRole('combobox', { name: 'State' }).selectOption('OR');").valid, true);
+  assert.equal(valid("await page.getByText('Continue').click();").valid, true);
 });
 
-test("rejects unsupported constructs and indirect access", () => {
+test("rejects unsupported constructs, shutdown APIs, and indirect access", () => {
   for (const code of [
     "do { await page.goto('https://example.com'); } while (false);",
     "label: await page.goto('https://example.com');",
     "class Exploit {}",
     "page.foo.click();",
+    "page.close();",
+    "page.context().close();",
+    "page.browser().close();",
     "page.constructor.constructor('return process')();",
     "page['goto']('https://example.com');",
     "page.waitForFunction`document.body.innerText`;",
@@ -54,16 +61,15 @@ test("rejects local, private, link-local, and non-http targets", () => {
   assert.equal(valid("await page.goto('https://user:password@example.com');").valid, false);
 });
 
-test("rejects sensitive or non-search input", () => {
-  assert.equal(valid("await page.locator('#f1').fill('secret');").valid, false);
-  assert.equal(valid("await page.getByRole('textbox').fill('secret');").valid, false);
-  assert.equal(valid("await page.getByRole('searchbox').fill(value);").valid, false);
-  assert.equal(valid("await page.locator('#password').press('a');").valid, false);
-  assert.equal(valid("await page.locator('input[type=search] + input[type=password]').fill('secret');").valid, false);
-  assert.equal(valid("await page.getByRole('searchbox').press(key);").valid, false);
+test("allows generic literal interaction but rejects runtime values", () => {
+  assert.equal(valid("await page.locator('#name').fill('Ada');").valid, true);
+  assert.equal(valid("await page.getByRole('textbox').press('Tab');").valid, true);
+  assert.equal(valid("await page.getByRole('textbox').fill(value);").valid, false);
+  assert.equal(valid("await page.getByRole('checkbox').check('unexpected');").valid, false);
+  assert.equal(valid("await page.getByRole('combobox').selectOption(option);").valid, false);
 });
 
-test("requires the supported policy version", () => {
+test("requires the supported interaction policy version", () => {
   assert.equal(valid("await page.goto('https://example.com');").valid, true);
   assert.equal(validateBrowserCode("await page.goto('https://example.com');", "old-policy").valid, false);
   assert.equal(validateBrowserCode("await page.goto('https://example.com');", undefined as unknown as string).valid, false);

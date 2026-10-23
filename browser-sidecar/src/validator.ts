@@ -1,6 +1,6 @@
 import { parse } from "acorn";
 
-export const BROWSER_POLICY_VERSION = "browser-navigation-v1";
+export const BROWSER_POLICY_VERSION = "browser-interaction-v1";
 
 export type BrowserViolation = {
   category: string;
@@ -13,7 +13,7 @@ export type ValidationResult = {
 };
 
 const locatorFactories = new Set(["locator", "getByRole", "getByText", "getByLabel"]);
-const actionMethods = new Set(["click", "fill", "selectOption", "press"]);
+const actionMethods = new Set(["click", "check", "uncheck", "fill", "selectOption", "press"]);
 const allowedChains = new Set([
   "page.goto",
   "page.mouse.wheel",
@@ -140,18 +140,19 @@ export function isSafeBrowserURL(value: string): boolean {
   }
 }
 
-function safeSearchLocator(node: any): boolean {
-  if (node?.type !== "CallExpression" || node.callee?.type !== "MemberExpression" || node.callee.computed) return false;
-  const factory = node.callee.property?.name;
-  if (factory === "getByRole" && node.callee.object?.type === "Identifier" && node.callee.object.name === "page") {
-    const role = node.arguments?.[0];
-    return isString(role) && ["searchbox", "combobox"].includes(role.value.toLowerCase());
-  }
-  if (factory === "locator" && node.callee.object?.type === "Identifier" && node.callee.object.name === "page") {
-    const selector = node.arguments?.[0];
-    return isString(selector) && /^(?:input\[type=["']search["']\]|\[role=["']searchbox["']\])$/i.test(selector.value.replace(/\s+/g, ""));
-  }
-  return false;
+function isNumber(node: any): boolean {
+  return node?.type === "Literal" && typeof node.value === "number" && Number.isFinite(node.value);
+}
+
+function validRoleOptions(node: any): boolean {
+  if (node === undefined) return true;
+  if (node.type !== "ObjectExpression") return false;
+  return node.properties.every((property: any) => {
+    if (property.type !== "Property" || property.computed || property.kind !== "init" || property.method) return false;
+    const key = property.key?.type === "Identifier" ? property.key.name : property.key?.value;
+    return ["name", "exact", "checked", "selected", "disabled"].includes(key)
+      && (isString(property.value) || property.value?.type === "Literal" && typeof property.value.value === "boolean");
+  });
 }
 
 function validateCall(node: any, violations: BrowserViolation[]): void {
@@ -173,28 +174,23 @@ function validateCall(node: any, violations: BrowserViolation[]): void {
   if (chainText === "page.goto" && (node.arguments?.length !== 1 || !isString(node.arguments[0]) || !isSafeBrowserURL(node.arguments[0].value))) {
     violations.push(violation("target", "Navigation requires exactly one literal public HTTP(S) URL."));
   }
-  if (chainText === "page.mouse.wheel" && node.arguments?.length !== 2) {
+  if (chainText === "page.mouse.wheel" && (node.arguments?.length !== 2 || !node.arguments.every(isNumber))) {
     violations.push(violation("arguments", "Scrolling requires exactly two numeric arguments."));
   }
-  if (isFactory && (!isString(node.arguments?.[0]) || (method === "getByRole" && !["searchbox", "combobox"].includes(node.arguments[0].value.toLowerCase())))) {
-    violations.push(violation("selector", "Only safe, literal search-oriented locators are allowed."));
+  if (isFactory) {
+    const validArguments = method === "getByRole"
+      ? node.arguments?.length >= 1 && node.arguments.length <= 2 && isString(node.arguments[0]) && validRoleOptions(node.arguments[1])
+      : node.arguments?.length === 1 && isString(node.arguments[0]);
+    if (!validArguments) violations.push(violation("selector", "Locators require literal accessible names, roles, text, or selectors."));
   }
   if (isAction) {
-    const locatorCall = node.callee.object;
-    const safeSearchField = chain[1] === "getByRole"
-      ? true
-      : safeSearchLocator(locatorCall);
-    if ((method === "fill" || method === "press") && (!safeSearchField || !isString(node.arguments?.[0]))) {
-      violations.push(violation(
-        "sensitive_input",
-        method === "press"
-          ? "Only literal keys for search-oriented fields may be pressed."
-          : "Only literal values for search-oriented fields may be filled.",
-      ));
-    }
-    if (method === "selectOption" && (!isString(node.arguments?.[0]) || !safeSearchLocator(locatorCall))) {
-      violations.push(violation("sensitive_input", "Only safe search-oriented controls may be selected."));
-    }
+    const argumentCount = node.arguments?.length ?? 0;
+    const valid = method === "click" || method === "check" || method === "uncheck"
+      ? argumentCount === 0
+      : (method === "fill" || method === "press" || method === "selectOption")
+        ? argumentCount === 1 && isString(node.arguments[0])
+        : false;
+    if (!valid) violations.push(violation("arguments", "Actions require literal arguments and cannot receive runtime values."));
   }
 }
 
