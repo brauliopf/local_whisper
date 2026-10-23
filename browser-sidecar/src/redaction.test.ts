@@ -1,6 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { isSensitiveControl, redactControl, redactText, sanitizeURL } from "./redaction.js";
+import {
+  buildPageSnapshot,
+  isSensitiveControl,
+  redactPageSnapshot,
+  redactSemanticNode,
+  redactText,
+  sanitizeURL,
+} from "./redaction.js";
 
 test("redacts credentials and payment-like text", () => {
   const text = "Email me@example.com and use 4111 1111 1111 1111";
@@ -28,13 +35,41 @@ test("sanitizes URLs without exposing query values", () => {
   assert.equal(sanitizeURL("about:srcdoc"), "[REDACTED_URL]");
 });
 
-test("preserves safe control values and hides sensitive values", () => {
-  assert.equal(
-    redactControl({ tag: "input", type: "text", label: "Search", value: "Portland" }).value,
-    "Portland",
-  );
-  const sensitive = redactControl({ tag: "input", type: "password", name: "hunter2", label: "Password hunter2", value: "secret" });
+test("preserves safe semantic fields and hides sensitive values", () => {
+  const safe = redactSemanticNode({ kind: "input", role: "searchbox", label: "Search", value: "Portland" });
+  assert.equal(safe.label, "Search");
+  assert.equal(safe.value, "Portland");
+
+  const sensitive = redactSemanticNode({ kind: "input", type: "password", name: "hunter2", label: "Password hunter2", value: "secret" });
   assert.equal(sensitive.value, "[REDACTED]");
   assert.equal(sensitive.label, "[REDACTED]");
   assert.equal(sensitive.name, "[REDACTED]");
+});
+
+test("redacts and bounds semantic page snapshots", () => {
+  const snapshot = redactPageSnapshot({
+    url: "https://example.test/account?token=secret",
+    title: "Account",
+    nodes: [
+      { kind: "button", role: "button", name: "Next", text: "Next" },
+      { kind: "input", type: "password", label: "Password", value: "secret" },
+    ],
+  });
+  assert.equal(snapshot.url, "https://example.test/[REDACTED_PATH]?[REDACTED_QUERY]");
+  assert.equal(snapshot.nodes[0]?.name, "Next");
+  assert.equal(snapshot.nodes[1]?.value, "[REDACTED]");
+  assert.equal(Buffer.byteLength(JSON.stringify(snapshot), "utf8") <= 64_000, true);
+});
+
+test("truncates oversized snapshots deterministically and hashes stable state", () => {
+  const input = {
+    url: "https://example.test/",
+    title: "Fixture",
+    nodes: Array.from({ length: 500 }, (_, index) => ({ kind: "p", text: `${index} ${"x".repeat(500)}` })),
+  };
+  const first = buildPageSnapshot(input);
+  const second = buildPageSnapshot(input);
+  assert.equal(first.truncated, true);
+  assert.equal(Buffer.byteLength(JSON.stringify(first), "utf8") <= 64_000, true);
+  assert.deepEqual(first, second);
 });

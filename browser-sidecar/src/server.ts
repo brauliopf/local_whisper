@@ -1,16 +1,11 @@
-import { createHash } from "node:crypto";
 import { createInterface } from "node:readline";
 import { lookup } from "node:dns/promises";
 import { chromium, type Browser, type BrowserContext, type Page } from "playwright";
-import {
-  redactControl,
-  redactText,
-  sanitizeURL,
-  type PageSnapshot,
-} from "./redaction.js";
+import { buildPageSnapshot, type PageSnapshot } from "./redaction.js";
 import { awaitAndClose } from "./shutdown.js";
 import { isSafeBrowserURL } from "./validator.js";
 import { executeBrowserPlan } from "./execution.js";
+import { collectSemanticPageData } from "./semantic.js";
 
 const PROTOCOL_VERSION = 1;
 
@@ -26,15 +21,6 @@ type Command = {
   policy_version?: string;
   expires_at?: string;
 };
-
-interface ControlData {
-  tag: string;
-  type: string | null;
-  name: string | null;
-  autocomplete: string | null;
-  label: string | null;
-  value: string | null;
-}
 
 interface SidecarState {
   status: "idle" | "running" | "paused" | "stopped";
@@ -119,48 +105,15 @@ async function snapshot(): Promise<PageSnapshot | undefined> {
   if (!page) throw new Error("Browser tab is not running");
   const generation = pauseGeneration;
 
-  const data = await page.evaluate(() => {
-    const labelFor = (element: Element): string | null => {
-      if (!(element instanceof HTMLElement)) return null;
-      const id = element.getAttribute("id");
-      if (id) {
-        const label = document.querySelector(`label[for="${CSS.escape(id)}"]`);
-        if (label?.textContent) return label.textContent.trim();
-      }
-      return element.getAttribute("aria-label") ?? element.getAttribute("placeholder");
-    };
-
-    const controls: ControlData[] = Array.from(
-      document.querySelectorAll("input, textarea, select, button"),
-    ).map((element) => ({
-      tag: element.tagName.toLowerCase(),
-      type: element.getAttribute("type"),
-      name: element.getAttribute("name"),
-      autocomplete: element.getAttribute("autocomplete"),
-      label: labelFor(element),
-      value: element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement
-        ? element.value
-        : element.textContent?.trim() ?? "",
-    }));
-
-    return {
-      url: location.href,
-      title: document.title,
-      controls,
-    };
-  });
+  const data = await page.evaluate(collectSemanticPageData);
 
   if (paused || generation !== pauseGeneration) return undefined;
 
-  const redacted = {
-    url: sanitizeURL(data.url),
-    title: redactText(data.title),
-    controls: data.controls.map(redactControl),
-  };
-  return {
-    ...redacted,
-    stateHash: createHash("sha256").update(JSON.stringify(redacted)).digest("hex"),
-  };
+  return buildPageSnapshot({
+    url: data.url,
+    title: data.title,
+    nodes: data.nodes.map(({ visible: _visible, ...node }) => node),
+  });
 }
 
 async function start(): Promise<PageSnapshot | undefined> {

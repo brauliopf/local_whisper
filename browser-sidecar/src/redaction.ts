@@ -1,10 +1,32 @@
-export interface RedactedControl {
-  tag: string;
-  type?: string;
-  label?: string;
+import { createHash } from "node:crypto";
+
+export interface SemanticNode {
+  kind: string;
+  role?: string;
   name?: string;
-  value: string;
+  label?: string;
+  text?: string;
+  href?: string;
+  type?: string;
+  autocomplete?: string;
+  value?: string;
+  checked?: boolean;
+  selected?: boolean;
+  disabled?: boolean;
+  level?: number;
 }
+
+export interface PageSnapshot {
+  url: string;
+  title: string;
+  nodes: SemanticNode[];
+  stateHash: string;
+  truncated?: boolean;
+}
+
+export const MAX_SNAPSHOT_BYTES = 64_000;
+export const MAX_SEMANTIC_NODES = 500;
+const MAX_FIELD_LENGTH = 500;
 
 const sensitivePattern = /password|passcode|otp|one[-_ ]?time|verification|token|secret|api[-_ ]?key|credit|card|cvv|cvc|security code|auth|username|user[-_ ]?name|email|e-mail/i;
 const sensitiveAutocompletePattern = /^(?:current-password|new-password|one-time-code|cc-number|cc-exp|cc-exp-month|cc-exp-year|cc-csc|username|email)$/i;
@@ -15,6 +37,11 @@ const jwtPattern = /\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g;
 const labeledCodePattern = /\b(?:otp|one[-_ ]?time|verification|security)(?:\s+(?:code|number))?\s*[:=-]?\s*\d{4,8}\b/gi;
 const labeledIdentityPattern = /\b(?:username|user[-_ ]?name|email|e-mail)\s*[:=-]?\s*\S+/gi;
 const labeledSecretPattern = /\b(?:password|passcode|secret|token|api[-_ ]?key|cvv|cvc|security code)\s*[:=-]?\s*\S+/gi;
+
+function limit(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  return value.length > MAX_FIELD_LENGTH ? `${value.slice(0, MAX_FIELD_LENGTH)}…` : value;
+}
 
 export function isSensitiveControl(control: {
   type?: string | null;
@@ -41,29 +68,54 @@ export function redactText(value: string): string {
     .replace(labeledSecretPattern, "[REDACTED_SECRET]");
 }
 
-export function redactControl(control: {
-  tag: string;
-  type?: string | null;
-  name?: string | null;
-  autocomplete?: string | null;
-  label?: string | null;
-  value?: string | null;
-}): RedactedControl {
-  const sensitive = isSensitiveControl(control);
+export function redactSemanticNode(node: SemanticNode): SemanticNode {
+  const sensitive = isSensitiveControl({
+    type: node.type,
+    name: node.name,
+    autocomplete: node.autocomplete,
+    label: node.label,
+  });
+  const redact = (value: string | undefined): string | undefined => limit(value ? redactText(value) : undefined);
   return {
-    tag: control.tag,
-    type: control.type ?? undefined,
-    label: sensitive ? "[REDACTED]" : (control.label ? redactText(control.label) : undefined),
-    name: sensitive ? "[REDACTED]" : (control.name ? redactText(control.name) : undefined),
-    value: sensitive ? "[REDACTED]" : redactText(control.value ?? ""),
+    kind: node.kind,
+    role: redact(node.role),
+    name: sensitive ? "[REDACTED]" : redact(node.name),
+    label: sensitive ? "[REDACTED]" : redact(node.label),
+    text: sensitive ? "[REDACTED]" : redact(node.text),
+    href: node.href ? sanitizeURL(node.href) : undefined,
+    type: redact(node.type),
+    autocomplete: sensitive ? "[REDACTED]" : redact(node.autocomplete),
+    value: sensitive ? "[REDACTED]" : redact(node.value),
+    checked: node.checked,
+    selected: node.selected,
+    disabled: node.disabled,
+    level: node.level,
   };
 }
 
-export interface PageSnapshot {
-  url: string;
-  title: string;
-  controls: RedactedControl[];
-  stateHash: string;
+export function redactPageSnapshot(input: Omit<PageSnapshot, "stateHash">): Omit<PageSnapshot, "stateHash"> {
+  let nodes = input.nodes.slice(0, MAX_SEMANTIC_NODES).map(redactSemanticNode);
+  let truncated = Boolean(input.truncated) || nodes.length < input.nodes.length;
+  let result: Omit<PageSnapshot, "stateHash"> = {
+    url: sanitizeURL(input.url),
+    title: redactText(input.title).slice(0, MAX_FIELD_LENGTH),
+    nodes,
+    ...(truncated ? { truncated: true } : {}),
+  };
+  while (Buffer.byteLength(JSON.stringify(result), "utf8") > MAX_SNAPSHOT_BYTES && nodes.length > 0) {
+    nodes = nodes.slice(0, -1);
+    truncated = true;
+    result = { ...result, nodes, truncated: true };
+  }
+  return result;
+}
+
+export function buildPageSnapshot(input: Omit<PageSnapshot, "stateHash">): PageSnapshot {
+  const redacted = redactPageSnapshot(input);
+  return {
+    ...redacted,
+    stateHash: createHash("sha256").update(JSON.stringify(redacted)).digest("hex"),
+  };
 }
 
 export function sanitizeURL(value: string): string {
