@@ -1,9 +1,8 @@
-import OpenAI from "openai";
 import { buildApp } from "./app.js";
 import { loadConfig } from "./config.js";
 import { createOpenAIImageTextProvider } from "./provider.js";
 import { TranscriptionWorkflow } from "./transcription.js";
-import { createTypeSafeBrowserSafetyReviewer, createTypeSafeLanguageClassifier } from "./typesafe.js";
+import { createTypeSafeLanguageClassifier } from "./typesafe.js";
 
 const config = loadConfig();
 const provider = createOpenAIImageTextProvider(
@@ -12,7 +11,6 @@ const provider = createOpenAIImageTextProvider(
   config.encouragementModel,
   config.transcriptionModel,
   config.translationModel,
-  config.browserPlannerModel,
   config.providerTimeoutMs,
 );
 const transcriptionWorkflow = new TranscriptionWorkflow({
@@ -29,10 +27,6 @@ const transcriptionWorkflow = new TranscriptionWorkflow({
 const app = await buildApp({
   config,
   provider,
-  planner: provider,
-  browserSafetyReviewer: config.typesafeAPIKey
-    ? createTypeSafeBrowserSafetyReviewer(config.typesafeAPIKey, config.typesafeModel)
-    : undefined,
   transcriptionWorkflow,
 });
 

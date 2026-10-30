@@ -30,38 +30,10 @@ nonisolated struct BackendImageTextResponse: Decodable, Sendable {
     }
 }
 
-nonisolated struct BackendBrowserPlanResponse: Decodable, Sendable {
-    let code: String
-    let planID: String
-    let policyVersion: String
-    let stateHash: String
-    let expiresAt: String
-    let safetyReview: String?
-    let requestID: String
-
-    enum CodingKeys: String, CodingKey {
-        case code
-        case planID = "plan_id"
-        case policyVersion = "policy_version"
-        case stateHash = "state_hash"
-        case expiresAt = "expires_at"
-        case safetyReview = "safety_review"
-        case requestID = "request_id"
-    }
-}
-
 nonisolated protocol BackendClienting: Sendable {
     func extractText(fromJPEG data: Data, serviceToken: String) async throws -> String?
     func fetchEncouragement(serviceToken: String) async throws -> String
     func transcribeAudio(at fileURL: URL, serviceToken: String) async throws -> String
-    func requestBrowserPlan(
-        goal: String,
-        pageStateJSON: Data,
-        capabilityPolicyJSON: Data,
-        policyVersion: String,
-        sessionID: String,
-        serviceToken: String
-    ) async throws -> BackendBrowserPlanResponse
 }
 
 nonisolated enum BackendConfiguration {
@@ -145,30 +117,6 @@ actor BackendClient: BackendClienting {
 
         let response: BackendImageTextResponse = try await send(request)
         return response.text ?? ""
-    }
-
-    func requestBrowserPlan(
-        goal: String,
-        pageStateJSON: Data,
-        capabilityPolicyJSON: Data,
-        policyVersion: String,
-        sessionID: String,
-        serviceToken: String
-    ) async throws -> BackendBrowserPlanResponse {
-        guard !serviceToken.isEmpty else { throw BackendError.missingServiceToken }
-        let pageState = try JSONSerialization.jsonObject(with: pageStateJSON)
-        let capabilityPolicy = try JSONSerialization.jsonObject(with: capabilityPolicyJSON)
-        var request = makeRequest(path: "browser-plans", serviceToken: serviceToken)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try JSONSerialization.data(withJSONObject: [
-            "goal": goal,
-            "page_state": pageState,
-            "capability_policy": capabilityPolicy,
-            "policy_version": policyVersion,
-            "session_id": sessionID,
-        ])
-        return try await send(request)
     }
 
     private func makeRequest(path: String, serviceToken: String) -> URLRequest {

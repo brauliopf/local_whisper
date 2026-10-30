@@ -12,8 +12,4 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             await Telemetry.prepare()
         }
     }
-
-    func applicationWillTerminate(_ notification: Notification) {
-        coordinator.browser.stop()
-    }
 }

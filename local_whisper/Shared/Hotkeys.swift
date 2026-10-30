@@ -6,7 +6,6 @@ final class Hotkeys {
     var onEncouragement: (() -> Void)?
     var onTranscribe: (() -> Void)?
     var onScreenshot: (() -> Void)?
-    var onBrowseWeb: (() -> Void)?
     var onCountdown: (() -> Void)?
     var onSettings: (() -> Void)?
     var onEscape: (() -> Void)?
@@ -14,7 +13,6 @@ final class Hotkeys {
     private var encouragementHotKeyRef: EventHotKeyRef?
     private var transcribeHotKeyRef: EventHotKeyRef?
     private var screenshotHotKeyRef: EventHotKeyRef?
-    private var browseWebHotKeyRef: EventHotKeyRef?
     private var countdownHotKeyRef: EventHotKeyRef?
     private var settingsHotKeyRef: EventHotKeyRef?
     private var escapeHotKeyRef: EventHotKeyRef?
@@ -24,7 +22,6 @@ final class Hotkeys {
     private static let encouragementID = EventHotKeyID(signature: signature, id: 1)
     private static let transcribeID = EventHotKeyID(signature: signature, id: 2)
     private static let screenshotID = EventHotKeyID(signature: signature, id: 4)
-    private static let browseWebID = EventHotKeyID(signature: signature, id: 7)
     private static let countdownID = EventHotKeyID(signature: signature, id: 5)
     private static let settingsID = EventHotKeyID(signature: signature, id: 6)
     private static let escapeID = EventHotKeyID(signature: signature, id: 3)
@@ -33,7 +30,6 @@ final class Hotkeys {
         var encouragement = false
         var transcribe = false
         var screenshot = false
-        var browseWeb = false
         var countdown = false
         var settings = false
     }
@@ -70,7 +66,6 @@ final class Hotkeys {
                     case 2: hotkeys.onTranscribe?()
                     case 3: hotkeys.onEscape?()
                     case 4: hotkeys.onScreenshot?()
-                    case 7: hotkeys.onBrowseWeb?()
                     case 5: hotkeys.onCountdown?()
                     case 6: hotkeys.onSettings?()
                     default: break
@@ -110,14 +105,6 @@ final class Hotkeys {
             GetApplicationEventTarget(),
             0,
             &screenshotHotKeyRef
-        ) == noErr
-        result.browseWeb = RegisterEventHotKey(
-            UInt32(kVK_ANSI_A),
-            UInt32(controlKey | optionKey),
-            Self.browseWebID,
-            GetApplicationEventTarget(),
-            0,
-            &browseWebHotKeyRef
         ) == noErr
         result.countdown = RegisterEventHotKey(
             UInt32(kVK_ANSI_T),
@@ -167,9 +154,6 @@ final class Hotkeys {
         if let screenshotHotKeyRef {
             UnregisterEventHotKey(screenshotHotKeyRef)
         }
-        if let browseWebHotKeyRef {
-            UnregisterEventHotKey(browseWebHotKeyRef)
-        }
         if let countdownHotKeyRef {
             UnregisterEventHotKey(countdownHotKeyRef)
         }
@@ -182,7 +166,6 @@ final class Hotkeys {
         encouragementHotKeyRef = nil
         transcribeHotKeyRef = nil
         screenshotHotKeyRef = nil
-        browseWebHotKeyRef = nil
         countdownHotKeyRef = nil
         settingsHotKeyRef = nil
         eventHandler = nil

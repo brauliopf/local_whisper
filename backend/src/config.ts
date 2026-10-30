@@ -7,7 +7,6 @@ export interface AppConfig {
   encouragementModel: string;
   transcriptionModel: string;
   translationModel: string;
-  browserPlannerModel: string;
   typesafeModel: string;
   imageMaxBytes: number;
   audioMaxBytes: number;
@@ -54,7 +53,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     encouragementModel: env.ENCOURAGEMENT_MODEL?.trim() || "gpt-4o-mini",
     transcriptionModel: env.TRANSCRIPTION_MODEL?.trim() || "whisper-1",
     translationModel: env.TRANSLATION_MODEL?.trim() || "gpt-4o-mini",
-    browserPlannerModel: env.BROWSER_PLANNER_MODEL?.trim() || "gpt-4o-mini",
     typesafeModel: env.TYPESAFE_MODEL?.trim() || "jev-1.13.0",
     imageMaxBytes: positiveInteger(env, "IMAGE_MAX_BYTES", 10 * 1024 * 1024),
     audioMaxBytes: positiveInteger(env, "AUDIO_MAX_BYTES", 25 * 1024 * 1024),

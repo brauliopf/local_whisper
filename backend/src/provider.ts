@@ -5,7 +5,6 @@ import {
   ProviderTimeoutError,
 } from "./errors.js";
 import {
-  browserPlannerPrompt,
   encouragementInput,
   encouragementPrompt,
   imageTextPrompt,
@@ -14,28 +13,6 @@ import {
 
 export type ImageMediaType = "image/jpeg" | "image/png";
 export type AudioMediaType = "audio/mp4" | "audio/m4a" | "audio/x-m4a";
-
-export interface BrowserPlanRequest {
-  goal: string;
-  pageState: Record<string, unknown>;
-  capabilityPolicy: Record<string, unknown>;
-  policyVersion: string;
-  sessionID: string;
-}
-
-export interface BrowserPlan {
-  code: string;
-  planID: string;
-  policyVersion: string;
-  stateHash: string;
-}
-
-export interface BrowserPlanner {
-  generateBrowserPlan(
-    request: BrowserPlanRequest,
-    signal: AbortSignal,
-  ): Promise<BrowserPlan>;
-}
 
 export interface ImageTextProvider {
   extractText(
@@ -94,14 +71,13 @@ function wordCount(text: string): number {
   return text.split(/\s+/).filter(Boolean).length;
 }
 
-export class OpenAIImageTextProvider implements BackendProvider, BrowserPlanner {
+export class OpenAIImageTextProvider implements BackendProvider {
   constructor(
     private readonly client: OpenAI,
     private readonly imageTextModel: string,
     private readonly encouragementModel: string,
     private readonly transcriptionModel: string,
     private readonly translationModel: string,
-    private readonly browserPlannerModel: string,
   ) {}
 
   async extractText(
@@ -184,68 +160,6 @@ export class OpenAIImageTextProvider implements BackendProvider, BrowserPlanner 
     return response.text.trim();
   }
 
-  async generateBrowserPlan(
-    request: BrowserPlanRequest,
-    signal: AbortSignal,
-  ): Promise<BrowserPlan> {
-    let response: OpenAI.Responses.Response;
-    try {
-      response = await this.client.responses.create(
-        {
-          model: this.browserPlannerModel,
-          instructions: browserPlannerPrompt,
-          input: JSON.stringify(request),
-          text: {
-            format: {
-              type: "json_schema",
-              name: "browser_plan",
-              strict: true,
-              schema: {
-                type: "object",
-                additionalProperties: false,
-                properties: {
-                  code: { type: "string" },
-                  plan_id: { type: "string" },
-                  policy_version: { type: "string" },
-                  state_hash: { type: "string" },
-                },
-                required: ["code", "plan_id", "policy_version", "state_hash"],
-              },
-            },
-          },
-        },
-        { signal },
-      );
-    } catch (error) {
-      normalizeProviderError(error);
-    }
-
-    try {
-      const value: unknown = JSON.parse(response.output_text ?? "");
-      if (
-        typeof value !== "object" ||
-        value === null ||
-        Array.isArray(value) ||
-        typeof (value as Record<string, unknown>).code !== "string" ||
-        typeof (value as Record<string, unknown>).plan_id !== "string" ||
-        typeof (value as Record<string, unknown>).policy_version !== "string" ||
-        typeof (value as Record<string, unknown>).state_hash !== "string"
-      ) {
-        throw new Error("invalid browser plan");
-      }
-      const plan = value as Record<string, string>;
-      return {
-        code: plan.code,
-        planID: plan.plan_id,
-        policyVersion: plan.policy_version,
-        stateHash: plan.state_hash,
-
-      };
-    } catch {
-      throw new ProviderFailureError();
-    }
-  }
-
   async translateToEnglish(text: string, signal: AbortSignal): Promise<string> {
     let response: OpenAI.Responses.Response;
     try {
@@ -275,7 +189,6 @@ export function createOpenAIImageTextProvider(
   encouragementModel: string,
   transcriptionModel: string,
   translationModel: string,
-  browserPlannerModel: string,
   timeoutMs: number,
 ): OpenAIImageTextProvider {
   return new OpenAIImageTextProvider(
@@ -284,6 +197,5 @@ export function createOpenAIImageTextProvider(
     encouragementModel,
     transcriptionModel,
     translationModel,
-    browserPlannerModel,
   );
 }
