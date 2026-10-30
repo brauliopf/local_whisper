@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { AppConfig } from "./config.js";
 import { buildApp } from "./app.js";
-import type { BrowserSafetyReviewer } from "./typesafe.js";
 import type { BackendProvider } from "./provider.js";
 import { TranscriptionWorkflow } from "./transcription.js";
 
@@ -20,7 +19,6 @@ const config: AppConfig = {
   encouragementModel: "gpt-4o-mini",
   transcriptionModel: "whisper-1",
   translationModel: "gpt-4o-mini",
-  browserPlannerModel: "gpt-4o-mini",
   typesafeModel: "jev-1.13.0",
   imageMaxBytes: 10 * 1024 * 1024,
   audioMaxBytes: 25 * 1024 * 1024,
@@ -65,23 +63,6 @@ const alwaysEnglishClassifier = {
   },
 };
 
-const approvedBrowserReviewer: BrowserSafetyReviewer = {
-  async reviewBrowserPlan() {
-    return { approved: true, model: "test-jev", checks: { goal_alignment: 1 } };
-  },
-};
-
-const fakePlanner = {
-  async generateBrowserPlan() {
-    return {
-      code: "await page.goto('https://example.test');",
-      planID: "test-plan",
-      policyVersion: "browser-navigation-v1",
-      stateHash: "test-state",
-    };
-  },
-};
-
 function createTranscriptionWorkflow(provider: BackendProvider) {
   return new TranscriptionWorkflow({
     transcriber: provider,
@@ -113,14 +94,10 @@ function multipartBody(
 
 async function createTestApp(
   provider: BackendProvider = new FakeProvider(),
-  browserSafetyReviewer: BrowserSafetyReviewer | null = approvedBrowserReviewer,
-  planner = fakePlanner,
 ) {
   return buildApp({
     config,
     provider,
-    planner,
-    browserSafetyReviewer: browserSafetyReviewer ?? undefined,
     transcriptionWorkflow: createTranscriptionWorkflow(provider),
   });
 }
@@ -147,7 +124,6 @@ test("status reports an optional TypeSafe key as unconfigured", async () => {
   const app = await buildApp({
     config: { ...config, typesafeAPIKey: "" },
     provider: new FakeProvider(),
-    planner: fakePlanner,
     transcriptionWorkflow: createTranscriptionWorkflow(new FakeProvider()),
   });
   try {
@@ -157,160 +133,6 @@ test("status reports an optional TypeSafe key as unconfigured", async () => {
       openai: { configured: true },
       typesafe: { configured: false },
     });
-  } finally {
-    await app.close();
-  }
-});
-
-test("returns a schema-validated browser plan", async () => {
-  const app = await createTestApp();
-  try {
-    const response = await app.inject({
-      method: "POST",
-      url: "/browser-plans",
-      headers: {
-        authorization: `Bearer ${serviceToken}`,
-        "content-type": "application/json",
-      },
-      payload: JSON.stringify({
-        goal: "Search for Botero",
-        page_state: { url: "https://example.test", state_hash: "test-state" },
-        capability_policy: { allowed_actions: ["navigate", "click"] },
-        policy_version: "browser-navigation-v1",
-        session_id: "session-1",
-      }),
-    });
-    assert.equal(response.statusCode, 200);
-    const body = response.json() as Record<string, string>;
-    assert.equal(body.code, "await page.goto('https://example.test');");
-    assert.equal(body.plan_id, "test-plan");
-    assert.equal(body.policy_version, "browser-navigation-v1");
-    assert.equal(body.state_hash, "test-state");
-    assert.equal(body.safety_review, "approved");
-    assert.equal(body.request_id, String(response.headers["x-request-id"]));
-    const expiresAt = Date.parse(body.expires_at);
-    assert.ok(expiresAt > Date.now() + 4 * 60 * 1000);
-    assert.ok(expiresAt <= Date.now() + 5 * 60 * 1000);
-  } finally {
-    await app.close();
-  }
-});
-
-test("rejects browser plans that fail deterministic validation", async () => {
-  const app = await createTestApp(new FakeProvider(), approvedBrowserReviewer, {
-    async generateBrowserPlan() {
-      return {
-        ...await fakePlanner.generateBrowserPlan(),
-        code: "await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));",
-      };
-    },
-  });
-  try {
-    const response = await app.inject({
-      method: "POST",
-      url: "/browser-plans",
-      headers: { authorization: `Bearer ${serviceToken}`, "content-type": "application/json" },
-      payload: JSON.stringify({
-        goal: "Scroll down",
-        page_state: { url: "https://example.test", state_hash: "test-state" },
-        capability_policy: { allowed_actions: ["scroll"] },
-        policy_version: "browser-navigation-v1",
-        session_id: "session-1",
-      }),
-    });
-    assert.equal(response.statusCode, 422);
-  } finally {
-    await app.close();
-  }
-});
-
-test("rejects browser plans when safety review is unavailable", async () => {
-  const app = await createTestApp(new FakeProvider(), null);
-  try {
-    const response = await app.inject({
-      method: "POST",
-      url: "/browser-plans",
-      headers: { authorization: `Bearer ${serviceToken}`, "content-type": "application/json" },
-      payload: JSON.stringify({
-        goal: "Search for Botero",
-        page_state: { url: "https://example.test", state_hash: "test-state" },
-        capability_policy: { allowed_actions: ["navigate"] },
-        policy_version: "browser-navigation-v1",
-        session_id: "session-1",
-      }),
-    });
-    assert.equal(response.statusCode, 503);
-  } finally {
-    await app.close();
-  }
-});
-
-test("returns a timeout when browser safety review times out", async () => {
-  const reviewer: BrowserSafetyReviewer = {
-    async reviewBrowserPlan() {
-      return new Promise(() => undefined);
-    },
-  };
-  const app = await createTestApp(new FakeProvider(), reviewer);
-  try {
-    const response = await app.inject({
-      method: "POST",
-      url: "/browser-plans",
-      headers: { authorization: `Bearer ${serviceToken}`, "content-type": "application/json" },
-      payload: JSON.stringify({
-        goal: "Search for Botero",
-        page_state: { url: "https://example.test", state_hash: "test-state" },
-        capability_policy: { allowed_actions: ["navigate"] },
-        policy_version: "browser-navigation-v1",
-        session_id: "session-1",
-      }),
-    });
-    assert.equal(response.statusCode, 504);
-  } finally {
-    await app.close();
-  }
-});
-
-test("rejects browser plans that fail safety review", async () => {
-  const reviewer: BrowserSafetyReviewer = {
-    async reviewBrowserPlan() {
-      return { approved: false, model: "test-jev", checks: { goal_alignment: 0.1 } };
-    },
-  };
-  const app = await createTestApp(new FakeProvider(), reviewer);
-  try {
-    const response = await app.inject({
-      method: "POST",
-      url: "/browser-plans",
-      headers: { authorization: `Bearer ${serviceToken}`, "content-type": "application/json" },
-      payload: JSON.stringify({
-        goal: "Search for Botero",
-        page_state: { url: "https://example.test", state_hash: "test-state" },
-        capability_policy: { allowed_actions: ["navigate"] },
-        policy_version: "browser-navigation-v1",
-        session_id: "session-1",
-      }),
-    });
-    assert.equal(response.statusCode, 422);
-  } finally {
-    await app.close();
-  }
-});
-
-test("rejects an invalid browser plan request", async () => {
-  const app = await createTestApp();
-  try {
-    const response = await app.inject({
-      method: "POST",
-      url: "/browser-plans",
-      headers: {
-        authorization: `Bearer ${serviceToken}`,
-        "content-type": "application/json",
-      },
-      payload: JSON.stringify({ goal: "" }),
-    });
-    assert.equal(response.statusCode, 400);
-    assert.equal(response.json().error.code, "invalid_input");
   } finally {
     await app.close();
   }

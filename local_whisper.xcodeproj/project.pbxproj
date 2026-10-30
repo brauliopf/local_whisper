@@ -91,7 +91,6 @@
 				77F9243D303F9D5000338A78 /* Sources */,
 				77F9243E303F9D5000338A78 /* Frameworks */,
 				77F9243F303F9D5000338A78 /* Resources */,
-				77F92450303F9D5000338A78 /* Build browser sidecar */,
 			);
 			buildRules = (
 			);
@@ -162,35 +161,6 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
-
-/* Begin PBXShellScriptBuildPhase section */
-		77F92450303F9D5000338A78 /* Build browser sidecar */ = {
-			isa = PBXShellScriptBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputPaths = (
-				"$(PROJECT_DIR)/scripts/build_browser_sidecar.sh",
-				"$(PROJECT_DIR)/browser-sidecar/package.json",
-				"$(PROJECT_DIR)/browser-sidecar/package-lock.json",
-				"$(PROJECT_DIR)/browser-sidecar/tsconfig.json",
-				"$(PROJECT_DIR)/browser-sidecar/src/redaction.ts",
-				"$(PROJECT_DIR)/browser-sidecar/src/server.ts",
-				"$(PROJECT_DIR)/browser-sidecar/src/shutdown.ts",
-				"$(PROJECT_DIR)/browser-sidecar/src/validator.ts",
-				"$(PROJECT_DIR)/browser-sidecar/bin/browser-sidecar",
-				"$(PROJECT_DIR)/browser-sidecar/node_modules",
-			);
-			name = "Build browser sidecar";
-			outputPaths = (
-				"$(TARGET_BUILD_DIR)/$(CONTENTS_FOLDER_PATH)/Resources/browser-sidecar",
-				"$(TARGET_BUILD_DIR)/$(CONTENTS_FOLDER_PATH)/Resources/browser-sidecar-runtime/dist/server.js",
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "$PROJECT_DIR/scripts/build_browser_sidecar.sh\n";
-		};
-/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		8A1C7D0B0000000000000005 /* Sources */ = {
