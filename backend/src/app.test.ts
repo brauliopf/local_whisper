@@ -4,7 +4,11 @@ import type { AppConfig } from "./config.js";
 import { buildApp } from "./app.js";
 import type { BackendProvider } from "./provider.js";
 import { TranscriptionWorkflow } from "./transcription.js";
-import { MemoryPersistenceError, type ConversationStore } from "./memory.js";
+import {
+  MemoryPersistenceError,
+  type ConversationMessage,
+  type ConversationStore,
+} from "./memory.js";
 import { ProviderFailureError } from "./errors.js";
 
 const serviceToken = "test-service-token";
@@ -44,9 +48,16 @@ class RecordingConversationStore implements ConversationStore {
     role?: "user" | "assistant";
     content?: string;
   }> = [];
+  readonly messages: ConversationMessage[] = [];
+  readonly loads: string[] = [];
 
   async ensureConversation(conversationId: string): Promise<void> {
     this.writes.push({ conversationId });
+  }
+
+  async loadMessages(conversationId: string): Promise<ConversationMessage[]> {
+    this.loads.push(conversationId);
+    return this.messages.map((message) => ({ ...message }));
   }
 
   async appendMessage(
@@ -55,6 +66,7 @@ class RecordingConversationStore implements ConversationStore {
     content: string,
   ): Promise<void> {
     this.writes.push({ conversationId, role, content });
+    this.messages.push({ role, content });
   }
 }
 
@@ -123,9 +135,13 @@ class FakeProvider implements BackendProvider {
     return text;
   }
 
-  async completeText(text: string, _signal?: AbortSignal): Promise<string> {
+  readonly receivedMessages: ConversationMessage[][] = [];
+
+  async completeText(messages: ConversationMessage[], _signal?: AbortSignal): Promise<string> {
     this.completeCalls += 1;
-    return `Answer: ${text}`;
+    this.receivedMessages.push(messages.map((message) => ({ ...message })));
+    const latestUserMessage = [...messages].reverse().find(({ role }) => role === "user");
+    return `Answer: ${latestUserMessage?.content ?? ""}`;
   }
 }
 
@@ -353,7 +369,9 @@ test("returns a raw source-language transcription", async () => {
 });
 
 test("completes transcript text without accepting audio", async () => {
-  const app = await createTestApp(new FakeProvider(), new RecordingConversationStore());
+  const provider = new FakeProvider();
+  const store = new RecordingConversationStore();
+  const app = await createTestApp(provider, store);
   try {
     const response = await app.inject({
       method: "POST",
@@ -367,14 +385,23 @@ test("completes transcript text without accepting audio", async () => {
     assert.equal(response.statusCode, 200);
     assert.equal(response.json().text, "Answer: What is the answer?");
     assert.equal(response.json().request_id, String(response.headers["x-request-id"]));
+    assert.deepEqual(provider.receivedMessages, [[
+      { role: "user", content: "What is the answer?" },
+    ]]);
+    assert.deepEqual(store.loads, []);
   } finally {
     await app.close();
   }
 });
 
-test("persists the user message before the assistant message", async () => {
+test("loads conversation history into the completion request", async () => {
+  const provider = new FakeProvider();
   const conversationStore = new RecordingConversationStore();
-  const app = await createTestApp(new FakeProvider(), conversationStore);
+  conversationStore.messages.push(
+    { role: "user", content: "What is the capital of France?" },
+    { role: "assistant", content: "Paris." },
+  );
+  const app = await createTestApp(provider, conversationStore);
   try {
     const response = await app.inject({
       method: "POST",
@@ -391,6 +418,12 @@ test("persists the user message before the assistant message", async () => {
       { conversationId: "conversation-1", role: "user", content: "what is cearense?" },
       { conversationId: "conversation-1", role: "assistant", content: "Answer: what is cearense?" },
     ]);
+    assert.deepEqual(conversationStore.loads, ["conversation-1"]);
+    assert.deepEqual(provider.receivedMessages, [[
+      { role: "user", content: "What is the capital of France?" },
+      { role: "assistant", content: "Paris." },
+      { role: "user", content: "what is cearense?" },
+    ]]);
     assert.equal(response.json().conversation_id, "conversation-1");
   } finally {
     await app.close();
@@ -402,7 +435,8 @@ test("enforces one deadline across chat persistence and provider work", async ()
   provider.completeText = async (text, signal) => {
     provider.completeCalls += 1;
     await delayWithAbort(160, signal);
-    return `Answer: ${text}`;
+    const latestUserMessage = [...text].reverse().find(({ role }) => role === "user");
+    return `Answer: ${latestUserMessage?.content ?? ""}`;
   };
   const store = new SlowUserMessageStore();
   const app = await createTestApp(provider, store, {

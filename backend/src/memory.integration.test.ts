@@ -29,6 +29,10 @@ test(
         "assistant",
         "A person or thing from Ceará.",
       );
+      assert.deepEqual(await store.loadMessages(conversationId), [
+        { role: "user", content: "what is cearense?" },
+        { role: "assistant", content: "A person or thing from Ceará." },
+      ]);
 
       const conversationQuery = new URLSearchParams({ select: "id", id: `eq.${conversationId}` });
       const conversationResponse = await fetch(
