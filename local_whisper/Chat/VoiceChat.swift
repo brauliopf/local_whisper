@@ -63,7 +63,6 @@ final class VoiceChat {
         if phase == .idle {
             response = ""
             errorMessage = ""
-            openWindow?()
         }
         capture.toggle(prompt: "Recording… press ⌃⌥C to stop")
     }
@@ -116,6 +115,7 @@ final class VoiceChat {
                 let text = try await backend.complete(text: trimmedTranscript, serviceToken: serviceToken)
                 guard !Task.isCancelled else { return }
                 response = text
+                openWindow?()
                 phase = .response
                 toast.show(message: "Response ready", isError: false)
             } catch is CancellationError {

@@ -12,12 +12,15 @@ final class VoiceChatTests: XCTestCase {
             toast: ToastPresenter(),
             capture: capture
         )
+        var openWindowCount = 0
+        chat.openWindow = { openWindowCount += 1 }
         let recordingURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("voice-chat-test.m4a")
         try Data("audio".utf8).write(to: recordingURL)
         capture.finishedURL = recordingURL
 
         chat.toggle()
+        XCTAssertEqual(openWindowCount, 0)
         chat.toggle()
 
         for _ in 0..<20 where chat.phase != .response {
@@ -26,6 +29,7 @@ final class VoiceChatTests: XCTestCase {
 
         XCTAssertEqual(backend.calls, ["transcribe", "complete:Bonjour?"])
         XCTAssertEqual(chat.response, "Answer")
+        XCTAssertEqual(openWindowCount, 1)
     }
 
     func testCancellingRecordingDoesNotSubmit() {
