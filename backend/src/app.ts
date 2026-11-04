@@ -393,6 +393,21 @@ export async function buildApp({
   });
 
   app.post("/chat-completions", async (request, reply) => {
+    const deadline = Date.now() + config.overallTimeoutMs;
+    const runChatOperation = <T>(operation: (signal: AbortSignal) => Promise<T>) => {
+      const remainingMs = deadline - Date.now();
+      if (remainingMs <= 0) {
+        throw new ProviderTimeoutError();
+      }
+      return runWithDeadline(
+        request,
+        operation,
+        config,
+        config.providerTimeoutMs,
+        remainingMs,
+      );
+    };
+
     const body = request.body;
     if (
       typeof body !== "object" ||
@@ -428,35 +443,23 @@ export async function buildApp({
       );
     }
 
-    const conversationCreated = await runWithDeadline(
-      request,
-      async (signal) => {
-        await conversationStore.ensureConversation(conversationID, signal);
-        return true;
-      },
-      config,
-    );
+    const conversationCreated = await runChatOperation(async (signal) => {
+      await conversationStore.ensureConversation(conversationID, signal);
+      return true;
+    });
     if (conversationCreated !== true || reply.raw.destroyed) {
       return;
     }
 
-    const userMessagePersisted = await runWithDeadline(
-      request,
-      async (signal) => {
-        await conversationStore.appendMessage(conversationID, "user", text, signal);
-        return true;
-      },
-      config,
-    );
+    const userMessagePersisted = await runChatOperation(async (signal) => {
+      await conversationStore.appendMessage(conversationID, "user", text, signal);
+      return true;
+    });
     if (userMessagePersisted !== true || reply.raw.destroyed) {
       return;
     }
 
-    const completion = await runWithDeadline(
-      request,
-      (signal) => provider.completeText(text, signal),
-      config,
-    );
+    const completion = await runChatOperation((signal) => provider.completeText(text, signal));
     if (completion === undefined || reply.raw.destroyed) {
       return;
     }
@@ -465,14 +468,10 @@ export async function buildApp({
       throw new ProviderFailureError();
     }
 
-    const assistantMessagePersisted = await runWithDeadline(
-      request,
-      async (signal) => {
-        await conversationStore.appendMessage(conversationID, "assistant", assistantText, signal);
-        return true;
-      },
-      config,
-    );
+    const assistantMessagePersisted = await runChatOperation(async (signal) => {
+      await conversationStore.appendMessage(conversationID, "assistant", assistantText, signal);
+      return true;
+    });
     if (assistantMessagePersisted !== true || reply.raw.destroyed) {
       return;
     }
