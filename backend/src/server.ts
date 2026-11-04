@@ -3,6 +3,7 @@ import { loadConfig } from "./config.js";
 import { createOpenAIImageTextProvider } from "./provider.js";
 import { TranscriptionWorkflow } from "./transcription.js";
 import { createTypeSafeLanguageClassifier } from "./typesafe.js";
+import { PostgresConversationStore } from "./memory.js";
 
 const config = loadConfig();
 const provider = createOpenAIImageTextProvider(
@@ -24,10 +25,18 @@ const transcriptionWorkflow = new TranscriptionWorkflow({
   translationTimeoutMs: config.translationProviderTimeoutMs,
   maxTranscriptChars: config.transcriptMaxChars,
 });
+const conversationStore = config.conversationStoreURL && config.conversationStoreSecretKey
+  ? new PostgresConversationStore(
+      config.conversationStoreURL,
+      config.conversationStoreSecretKey,
+    )
+  : undefined;
+
 const app = await buildApp({
   config,
   provider,
   transcriptionWorkflow,
+  conversationStore,
 });
 
 const close = async (signal: string) => {

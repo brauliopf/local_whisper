@@ -8,6 +8,8 @@ export interface AppConfig {
   transcriptionModel: string;
   translationModel: string;
   typesafeModel: string;
+  conversationStoreURL: string;
+  conversationStoreSecretKey: string;
   imageMaxBytes: number;
   audioMaxBytes: number;
   requestBodyMaxBytes: number;
@@ -54,6 +56,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     transcriptionModel: env.TRANSCRIPTION_MODEL?.trim() || "whisper-1",
     translationModel: env.TRANSLATION_MODEL?.trim() || "gpt-4o-mini",
     typesafeModel: env.TYPESAFE_MODEL?.trim() || "jev-1.13.0",
+    conversationStoreURL: env.SUPABASE_URL?.trim() || "",
+    conversationStoreSecretKey: env.SUPABASE_SECRET_KEY?.trim() || "",
     imageMaxBytes: positiveInteger(env, "IMAGE_MAX_BYTES", 10 * 1024 * 1024),
     audioMaxBytes: positiveInteger(env, "AUDIO_MAX_BYTES", 25 * 1024 * 1024),
     requestBodyMaxBytes: positiveInteger(

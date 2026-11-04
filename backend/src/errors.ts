@@ -7,6 +7,8 @@ export type ApiErrorCode =
   | "provider_timeout"
   | "provider_authentication"
   | "provider_failure"
+  | "memory_persistence_failed"
+  | "conversation_store_unavailable"
   | "internal_error";
 
 export class ApiError extends Error {

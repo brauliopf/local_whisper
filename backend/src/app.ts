@@ -19,15 +19,18 @@ import type {
   ImageMediaType,
 } from "./provider.js";
 import type { TranscriptionWorkflow } from "./transcription.js";
+import { MemoryPersistenceError, type ConversationStore } from "./memory.js";
 
 const jpegHeader = Buffer.from([0xff, 0xd8, 0xff]);
 const pngHeader = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 const m4aContainerHeader = Buffer.from("ftyp");
+const maxConversationIDBytes = 1024;
 
 export interface AppDependencies {
   config: AppConfig;
   provider: BackendProvider;
   transcriptionWorkflow: TranscriptionWorkflow;
+  conversationStore?: ConversationStore;
 }
 
 class ClientDisconnectedError extends Error {
@@ -87,6 +90,9 @@ function toApiError(error: unknown): ApiError {
   }
   if (error instanceof ProviderFailureError) {
     return new ApiError(502, "provider_failure", "The provider could not process the request. Please try again.");
+  }
+  if (error instanceof MemoryPersistenceError) {
+    return new ApiError(503, "memory_persistence_failed", "Conversation data could not be saved. Please try again.");
   }
   if (hasCode(error, "FST_ERR_CTP_BODY_TOO_LARGE") || hasCode(error, "FST_REQ_FILE_TOO_LARGE")) {
     return new ApiError(413, "file_too_large", "The uploaded file is too large.");
@@ -274,6 +280,7 @@ export async function buildApp({
   config,
   provider,
   transcriptionWorkflow,
+  conversationStore,
 }: AppDependencies): Promise<FastifyInstance> {
   const expectedTokenDigest = createHash("sha256").update(config.serviceToken).digest();
   const rateLimiter = new FixedWindowRateLimiter(
@@ -391,19 +398,58 @@ export async function buildApp({
       typeof body !== "object" ||
       body === null ||
       Array.isArray(body) ||
-      Object.keys(body).length !== 1 ||
-      typeof (body as { text?: unknown }).text !== "string"
+      Object.keys(body).some((key) => !["text", "conversation_id"].includes(key)) ||
+      typeof (body as { text?: unknown }).text !== "string" ||
+      ("conversation_id" in body && typeof (body as { conversation_id?: unknown }).conversation_id !== "string")
     ) {
       throw new ApiError(400, "invalid_input", "The request body must contain a text field.");
     }
 
-    const text = (body as { text: string }).text.trim();
+    const requestBody = body as { text: string; conversation_id?: string };
+    const text = requestBody.text.trim();
     if (!text || text.length > config.transcriptMaxChars) {
       throw new ApiError(
         400,
         "invalid_input",
         `The text must be between 1 and ${config.transcriptMaxChars} characters.`,
       );
+    }
+
+    const conversationID = requestBody.conversation_id?.trim() || request.id;
+    if (Buffer.byteLength(conversationID, "utf8") > maxConversationIDBytes) {
+      throw new ApiError(400, "invalid_input", "The conversation_id is too long.");
+    }
+
+    if (!conversationStore) {
+      throw new ApiError(
+        503,
+        "conversation_store_unavailable",
+        "Conversation persistence is not configured.",
+      );
+    }
+
+    const conversationCreated = await runWithDeadline(
+      request,
+      async (signal) => {
+        await conversationStore.ensureConversation(conversationID, signal);
+        return true;
+      },
+      config,
+    );
+    if (conversationCreated !== true || reply.raw.destroyed) {
+      return;
+    }
+
+    const userMessagePersisted = await runWithDeadline(
+      request,
+      async (signal) => {
+        await conversationStore.appendMessage(conversationID, "user", text, signal);
+        return true;
+      },
+      config,
+    );
+    if (userMessagePersisted !== true || reply.raw.destroyed) {
+      return;
     }
 
     const completion = await runWithDeadline(
@@ -414,7 +460,27 @@ export async function buildApp({
     if (completion === undefined || reply.raw.destroyed) {
       return;
     }
-    return { text: completion.trim(), request_id: request.id };
+    const assistantText = completion.trim();
+    if (!assistantText) {
+      throw new ProviderFailureError();
+    }
+
+    const assistantMessagePersisted = await runWithDeadline(
+      request,
+      async (signal) => {
+        await conversationStore.appendMessage(conversationID, "assistant", assistantText, signal);
+        return true;
+      },
+      config,
+    );
+    if (assistantMessagePersisted !== true || reply.raw.destroyed) {
+      return;
+    }
+    return {
+      text: assistantText,
+      conversation_id: conversationID,
+      request_id: request.id,
+    };
   });
 
   app.post("/transcriptions", async (request, reply) => {
