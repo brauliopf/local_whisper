@@ -307,7 +307,13 @@ export async function buildApp({
     }
     if (
       request.method === "POST" &&
-      ["/image-text", "/encouragements", "/transcriptions"].includes(request.url.split("?", 1)[0])
+      [
+        "/image-text",
+        "/encouragements",
+        "/transcriptions",
+        "/source-transcriptions",
+        "/chat-completions",
+      ].includes(request.url.split("?", 1)[0])
     ) {
       if (!rateLimiter.allow()) {
         const retryAfterSeconds = rateLimiter.retryAfterSeconds();
@@ -362,6 +368,53 @@ export async function buildApp({
       return;
     }
     return { text, request_id: request.id };
+  });
+
+  app.post("/source-transcriptions", async (request, reply) => {
+    const audio = await readAudio(request, config);
+    const text = await runWithDeadline(
+      request,
+      (signal) => provider.transcribeAudio(audio.data, audio.mediaType, signal),
+      config,
+      config.transcriptionProviderTimeoutMs,
+      config.transcriptionOverallTimeoutMs,
+    );
+    if (text === undefined || reply.raw.destroyed) {
+      return;
+    }
+    return { text: text.trim(), request_id: request.id };
+  });
+
+  app.post("/chat-completions", async (request, reply) => {
+    const body = request.body;
+    if (
+      typeof body !== "object" ||
+      body === null ||
+      Array.isArray(body) ||
+      Object.keys(body).length !== 1 ||
+      typeof (body as { text?: unknown }).text !== "string"
+    ) {
+      throw new ApiError(400, "invalid_input", "The request body must contain a text field.");
+    }
+
+    const text = (body as { text: string }).text.trim();
+    if (!text || text.length > config.transcriptMaxChars) {
+      throw new ApiError(
+        400,
+        "invalid_input",
+        `The text must be between 1 and ${config.transcriptMaxChars} characters.`,
+      );
+    }
+
+    const completion = await runWithDeadline(
+      request,
+      (signal) => provider.completeText(text, signal),
+      config,
+    );
+    if (completion === undefined || reply.raw.destroyed) {
+      return;
+    }
+    return { text: completion.trim(), request_id: request.id };
   });
 
   app.post("/transcriptions", async (request, reply) => {

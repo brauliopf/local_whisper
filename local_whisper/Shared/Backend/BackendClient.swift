@@ -20,6 +20,10 @@ nonisolated enum BackendError: LocalizedError, Sendable {
     }
 }
 
+nonisolated struct ChatCompletionRequest: Encodable, Sendable {
+    let text: String
+}
+
 nonisolated struct BackendImageTextResponse: Decodable, Sendable {
     let text: String?
     let requestID: String
@@ -34,6 +38,8 @@ nonisolated protocol BackendClienting: Sendable {
     func extractText(fromJPEG data: Data, serviceToken: String) async throws -> String?
     func fetchEncouragement(serviceToken: String) async throws -> String
     func transcribeAudio(at fileURL: URL, serviceToken: String) async throws -> String
+    func transcribeSourceAudio(at fileURL: URL, serviceToken: String) async throws -> String
+    func complete(text: String, serviceToken: String) async throws -> String
 }
 
 nonisolated enum BackendConfiguration {
@@ -95,6 +101,29 @@ actor BackendClient: BackendClienting {
     }
 
     func transcribeAudio(at fileURL: URL, serviceToken: String) async throws -> String {
+        try await transcribe(at: fileURL, path: "transcriptions", serviceToken: serviceToken)
+    }
+
+    func transcribeSourceAudio(at fileURL: URL, serviceToken: String) async throws -> String {
+        try await transcribe(at: fileURL, path: "source-transcriptions", serviceToken: serviceToken)
+    }
+
+    func complete(text: String, serviceToken: String) async throws -> String {
+        guard !serviceToken.isEmpty else { throw BackendError.missingServiceToken }
+        var request = makeRequest(path: "chat-completions", serviceToken: serviceToken)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONEncoder().encode(ChatCompletionRequest(text: text))
+
+        let response: BackendImageTextResponse = try await send(request)
+        guard let responseText = response.text?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !responseText.isEmpty else {
+            throw BackendError.invalidResponse
+        }
+        return responseText
+    }
+
+    private func transcribe(at fileURL: URL, path: String, serviceToken: String) async throws -> String {
         guard !serviceToken.isEmpty else { throw BackendError.missingServiceToken }
         let audio: Data
         do {
@@ -104,7 +133,7 @@ actor BackendClient: BackendClienting {
         }
 
         let boundary = UUID().uuidString
-        var request = makeRequest(path: "transcriptions", serviceToken: serviceToken)
+        var request = makeRequest(path: path, serviceToken: serviceToken)
         request.httpMethod = "POST"
         request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
         request.httpBody = Self.multipartBody(

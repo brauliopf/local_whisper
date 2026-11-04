@@ -7,7 +7,13 @@ final class AppCoordinator {
         didSet {
             encouragement.openSettings = openSettings
             voice.openSettings = openSettings
+            voiceChat.openSettings = openSettings
             screenshot.openSettings = openSettings
+        }
+    }
+    var openChat: (() -> Void)? {
+        didSet {
+            voiceChat.openWindow = openChat
         }
     }
 
@@ -16,6 +22,7 @@ final class AppCoordinator {
     let tokenState: ServiceTokenState
     private let encouragement: Encouragement
     private let voice: VoiceTranscription
+    let voiceChat: VoiceChat
     private let screenshot: ScreenshotOCR
     let countdown: Countdown
     private var didFinishLaunching = false
@@ -34,6 +41,7 @@ final class AppCoordinator {
         self.tokenState = ServiceTokenState(keychain: keychain)
         self.encouragement = Encouragement(backend: backend, tokenState: tokenState, toast: toast)
         self.voice = VoiceTranscription(backend: backend, tokenState: tokenState, toast: toast)
+        self.voiceChat = VoiceChat(backend: backend, tokenState: tokenState, toast: toast)
         self.screenshot = ScreenshotOCR(backend: backend, tokenState: tokenState, toast: toast)
         self.countdown = Countdown(toast: toast)
 
@@ -46,6 +54,9 @@ final class AppCoordinator {
         hotkeys.onTranscribe = { [weak self] in
             self?.toggleTranscription()
         }
+        hotkeys.onVoiceChat = { [weak self] in
+            self?.toggleVoiceChat()
+        }
         hotkeys.onScreenshot = { [weak self] in
             self?.readScreenshot()
         }
@@ -55,8 +66,12 @@ final class AppCoordinator {
         hotkeys.onSettings = { [weak self] in
             self?.openSettings?()
         }
+        voiceChat.setEscapeEnabled = { [weak self] enabled in
+            self?.hotkeys.setEscapeEnabled(enabled)
+        }
         hotkeys.onEscape = { [weak self] in
-            self?.voice.cancelRecording()
+            self?.voice.cancelRecording(showToast: false)
+            self?.voiceChat.cancelRecording()
         }
     }
 
@@ -95,11 +110,18 @@ final class AppCoordinator {
                 isError: true
             )
         }
+        if !registration.voiceChat {
+            toast.show(
+                message: "Couldn't register ⌃⌥C — another app may already use that shortcut.",
+                isError: true
+            )
+        }
     }
 
     func showEncouragement() {
         voice.cancelRecording(showToast: false)
         voice.cancelInFlightWork()
+        voiceChat.cancelInFlightWork()
         screenshot.cancel()
         encouragement.show()
     }
@@ -107,12 +129,22 @@ final class AppCoordinator {
     func toggleTranscription() {
         screenshot.cancel()
         encouragement.cancel()
+        voiceChat.cancelInFlightWork()
         voice.toggle()
+    }
+
+    func toggleVoiceChat() {
+        screenshot.cancel()
+        encouragement.cancel()
+        voice.cancelRecording(showToast: false)
+        voice.cancelInFlightWork()
+        voiceChat.toggle()
     }
 
     func readScreenshot() {
         voice.cancelRecording(showToast: false)
         voice.cancelInFlightWork()
+        voiceChat.cancelInFlightWork()
         encouragement.cancel()
         screenshot.captureAndRead()
     }

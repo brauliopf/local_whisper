@@ -1,7 +1,15 @@
 import Foundation
 
 @MainActor
-final class VoiceCapture {
+protocol VoiceCapturing: AnyObject {
+    var onRecordingFinished: ((URL) -> Void)? { get set }
+    var onRecordingStateChanged: ((Bool) -> Void)? { get set }
+    func toggle(prompt: String)
+    func cancel(showToast: Bool)
+}
+
+@MainActor
+final class VoiceCapture: VoiceCapturing {
     var onRecordingFinished: ((URL) -> Void)?
     var onRecordingStateChanged: ((Bool) -> Void)?
 
