@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@fastify/multipart": "^9.0.0",
+    "@supabase/server": "^1.9.2",
     "fastify": "^5.0.0",
     "openai": "^5.0.0"
   },
