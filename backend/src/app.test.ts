@@ -301,6 +301,25 @@ test("completes transcript text without accepting audio", async () => {
   }
 });
 
+test("completes the cearense question", async () => {
+  const app = await createTestApp();
+  try {
+    const response = await app.inject({
+      method: "POST",
+      url: "/chat-completions",
+      headers: {
+        authorization: `Bearer ${serviceToken}`,
+        "content-type": "application/json",
+      },
+      payload: JSON.stringify({ text: "what is cearense?" }),
+    });
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.json().text, "Answer: what is cearense?");
+  } finally {
+    await app.close();
+  }
+});
+
 test("rejects empty chat completion input", async () => {
   const app = await createTestApp();
   try {
