@@ -48,6 +48,10 @@ class FailingProvider implements BackendProvider {
   async translateToEnglish(): Promise<string> {
     throw new ProviderFailureError();
   }
+
+  async completeText(): Promise<string> {
+    throw new ProviderFailureError();
+  }
 }
 
 function transcriptionWorkflow(provider: BackendProvider) {

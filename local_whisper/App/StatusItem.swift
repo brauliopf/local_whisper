@@ -8,15 +8,20 @@ final class StatusItem: NSObject {
     private let statusItem: NSStatusItem
     private var menuState: Bool?
     private var settingsWindow: NSWindow?
+    private var chatWindow: NSWindow?
 
     init(coordinator: AppCoordinator) {
         self.coordinator = coordinator
         self.statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         self.settingsWindow = nil
+        self.chatWindow = nil
         super.init()
 
         coordinator.openSettings = { [weak self] in
             self?.openSettings()
+        }
+        coordinator.openChat = { [weak self] in
+            self?.openChat()
         }
 
         let image = NSImage(systemSymbolName: "sparkles", accessibilityDescription: "local_whisper")
@@ -58,6 +63,7 @@ final class StatusItem: NSObject {
         let menu = NSMenu()
         menu.addItem(menuItem("Show Encouragement", key: "e", action: #selector(showEncouragement)))
         menu.addItem(menuItem("Transcribe", key: "w", action: #selector(transcribe)))
+        menu.addItem(menuItem("Voice Chat", key: "c", action: #selector(voiceChat)))
         menu.addItem(menuItem("Read screenshot", key: "r", action: #selector(readScreenshot)))
         if timerRunning {
             menu.addItem(menuItem("Cancel Timer", key: nil, action: #selector(cancelTimer)))
@@ -97,12 +103,40 @@ final class StatusItem: NSObject {
         coordinator.readScreenshot()
     }
 
+    @objc private func voiceChat() {
+        coordinator.toggleVoiceChat()
+    }
+
     @objc private func startTimer() {
         coordinator.countdown.start()
     }
 
     @objc private func cancelTimer() {
         coordinator.countdown.cancel()
+    }
+
+    private func openChat() {
+        if chatWindow == nil {
+            let window = NSWindow(
+                contentRect: NSRect(x: 0, y: 0, width: 480, height: 320),
+                styleMask: [.titled, .closable, .miniaturizable, .resizable],
+                backing: .buffered,
+                defer: false
+            )
+            window.title = "Voice Chat"
+            let hostingView = NSHostingView(rootView: VoiceChatView(chat: coordinator.voiceChat))
+            hostingView.frame = window.contentView?.bounds ?? .zero
+            hostingView.autoresizingMask = [.width, .height]
+            window.contentView = hostingView
+            window.isReleasedWhenClosed = false
+            window.center()
+            chatWindow = window
+        }
+
+        guard let chatWindow else { return }
+        NSApp.activate(ignoringOtherApps: true)
+        chatWindow.collectionBehavior.insert(.moveToActiveSpace)
+        chatWindow.makeKeyAndOrderFront(nil)
     }
 
     @objc private func openSettings() {

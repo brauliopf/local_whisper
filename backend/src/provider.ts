@@ -38,11 +38,16 @@ export interface TranslationProvider {
   translateToEnglish(text: string, signal: AbortSignal): Promise<string>;
 }
 
+export interface ChatCompletionProvider {
+  completeText(text: string, signal: AbortSignal): Promise<string>;
+}
+
 export type BackendProvider =
   ImageTextProvider &
   EncouragementProvider &
   TranscriptionProvider &
-  TranslationProvider;
+  TranslationProvider &
+  ChatCompletionProvider;
 
 function errorName(error: unknown): string | undefined {
   return error instanceof Error ? error.name : undefined;
@@ -180,6 +185,27 @@ export class OpenAIImageTextProvider implements BackendProvider {
       throw new ProviderFailureError();
     }
     return translation;
+  }
+
+  async completeText(text: string, signal: AbortSignal): Promise<string> {
+    let response: OpenAI.Responses.Response;
+    try {
+      response = await this.client.responses.create(
+        {
+          model: this.encouragementModel,
+          input: text,
+        },
+        { signal },
+      );
+    } catch (error) {
+      normalizeProviderError(error);
+    }
+
+    const completion = response.output_text?.trim() ?? "";
+    if (!completion) {
+      throw new ProviderFailureError();
+    }
+    return completion;
   }
 }
 

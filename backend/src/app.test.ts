@@ -55,6 +55,10 @@ class FakeProvider implements BackendProvider {
   async translateToEnglish(text: string): Promise<string> {
     return text;
   }
+
+  async completeText(text: string): Promise<string> {
+    return `Answer: ${text}`;
+  }
 }
 
 const alwaysEnglishClassifier = {
@@ -251,6 +255,66 @@ test("transcribes M4A audio", async () => {
       is_translated: false,
       request_id: String(response.headers["x-request-id"]),
     });
+  } finally {
+    await app.close();
+  }
+});
+
+test("returns a raw source-language transcription", async () => {
+  const app = await createTestApp(new FakeProvider("Hello\\nworld", "Bonjour le monde."));
+  const request = multipartBody(m4a, "audio/mp4", "audio", "recording.m4a");
+  try {
+    const response = await app.inject({
+      method: "POST",
+      url: "/source-transcriptions",
+      headers: {
+        authorization: `Bearer ${serviceToken}`,
+        "content-type": request.contentType,
+      },
+      payload: request.body,
+    });
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.json().text, "Bonjour le monde.");
+    assert.equal(response.json().request_id, String(response.headers["x-request-id"]));
+  } finally {
+    await app.close();
+  }
+});
+
+test("completes transcript text without accepting audio", async () => {
+  const app = await createTestApp();
+  try {
+    const response = await app.inject({
+      method: "POST",
+      url: "/chat-completions",
+      headers: {
+        authorization: `Bearer ${serviceToken}`,
+        "content-type": "application/json",
+      },
+      payload: JSON.stringify({ text: "What is the answer?" }),
+    });
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.json().text, "Answer: What is the answer?");
+    assert.equal(response.json().request_id, String(response.headers["x-request-id"]));
+  } finally {
+    await app.close();
+  }
+});
+
+test("rejects empty chat completion input", async () => {
+  const app = await createTestApp();
+  try {
+    const response = await app.inject({
+      method: "POST",
+      url: "/chat-completions",
+      headers: {
+        authorization: `Bearer ${serviceToken}`,
+        "content-type": "application/json",
+      },
+      payload: JSON.stringify({ text: "   " }),
+    });
+    assert.equal(response.statusCode, 400);
+    assert.equal(response.json().error.code, "invalid_input");
   } finally {
     await app.close();
   }
