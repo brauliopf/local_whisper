@@ -430,6 +430,31 @@ test("loads conversation history into the completion request", async () => {
   }
 });
 
+test("persists the user message before the assistant message", async () => {
+  const conversationStore = new RecordingConversationStore();
+  const app = await createTestApp(new FakeProvider(), conversationStore);
+  try {
+    const response = await app.inject({
+      method: "POST",
+      url: "/chat-completions",
+      headers: {
+        authorization: `Bearer ${serviceToken}`,
+        "content-type": "application/json",
+      },
+      payload: JSON.stringify({ text: "what is cearense?", conversation_id: "conversation-1" }),
+    });
+    assert.equal(response.statusCode, 200);
+    assert.deepEqual(conversationStore.writes, [
+      { conversationId: "conversation-1" },
+      { conversationId: "conversation-1", role: "user", content: "what is cearense?" },
+      { conversationId: "conversation-1", role: "assistant", content: "Answer: what is cearense?" },
+    ]);
+    assert.equal(response.json().conversation_id, "conversation-1");
+  } finally {
+    await app.close();
+  }
+});
+
 test("enforces one deadline across chat persistence and provider work", async () => {
   const provider = new FakeProvider();
   provider.completeText = async (text, signal) => {
