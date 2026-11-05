@@ -16,6 +16,8 @@ const config: AppConfig = {
   transcriptionModel: "whisper-1",
   translationModel: "gpt-4o-mini",
   typesafeModel: "jev-1.13.0",
+  conversationStoreURL: "",
+  conversationStoreSecretKey: "",
   imageMaxBytes: 10 * 1024 * 1024,
   audioMaxBytes: 25 * 1024 * 1024,
   requestBodyMaxBytes: 27 * 1024 * 1024,

@@ -4,6 +4,8 @@ import type { AppConfig } from "./config.js";
 import { buildApp } from "./app.js";
 import type { BackendProvider } from "./provider.js";
 import { TranscriptionWorkflow } from "./transcription.js";
+import { MemoryPersistenceError, type ConversationStore } from "./memory.js";
+import { ProviderFailureError } from "./errors.js";
 
 const serviceToken = "test-service-token";
 const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0xff, 0xd9]);
@@ -20,6 +22,8 @@ const config: AppConfig = {
   transcriptionModel: "whisper-1",
   translationModel: "gpt-4o-mini",
   typesafeModel: "jev-1.13.0",
+  conversationStoreURL: "",
+  conversationStoreSecretKey: "",
   imageMaxBytes: 10 * 1024 * 1024,
   audioMaxBytes: 25 * 1024 * 1024,
   requestBodyMaxBytes: 27 * 1024 * 1024,
@@ -34,7 +38,70 @@ const config: AppConfig = {
   rateLimitWindowMs: 60_000,
 };
 
+class RecordingConversationStore implements ConversationStore {
+  readonly writes: Array<{
+    conversationId: string;
+    role?: "user" | "assistant";
+    content?: string;
+  }> = [];
+
+  async ensureConversation(conversationId: string): Promise<void> {
+    this.writes.push({ conversationId });
+  }
+
+  async appendMessage(
+    conversationId: string,
+    role: "user" | "assistant",
+    content: string,
+  ): Promise<void> {
+    this.writes.push({ conversationId, role, content });
+  }
+}
+
+function delayWithAbort(milliseconds: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const onAbort = () => {
+      clearTimeout(timeout);
+      reject(new Error("operation aborted"));
+    };
+    const timeout = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, milliseconds);
+    if (signal?.aborted) {
+      onAbort();
+    } else {
+      signal?.addEventListener("abort", onAbort, { once: true });
+    }
+  });
+}
+
+class SlowUserMessageStore extends RecordingConversationStore {
+  override async appendMessage(
+    conversationId: string,
+    role: "user" | "assistant",
+    content: string,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    if (role === "user") await delayWithAbort(160, signal);
+    await super.appendMessage(conversationId, role, content);
+  }
+}
+
+class FailingConversationStore extends RecordingConversationStore {
+  override async appendMessage(
+    conversationId: string,
+    role: "user" | "assistant",
+    content: string,
+  ): Promise<void> {
+    if (role === "assistant") throw new MemoryPersistenceError(500);
+    await super.appendMessage(conversationId, role, content);
+  }
+}
+
 class FakeProvider implements BackendProvider {
+  completeCalls = 0;
+
   constructor(
     private readonly result: string | null = "Hello\\nworld",
     private readonly transcriptionResult = "This is a test transcript.",
@@ -56,7 +123,8 @@ class FakeProvider implements BackendProvider {
     return text;
   }
 
-  async completeText(text: string): Promise<string> {
+  async completeText(text: string, _signal?: AbortSignal): Promise<string> {
+    this.completeCalls += 1;
     return `Answer: ${text}`;
   }
 }
@@ -98,11 +166,14 @@ function multipartBody(
 
 async function createTestApp(
   provider: BackendProvider = new FakeProvider(),
+  conversationStore?: ConversationStore,
+  configOverrides: Partial<AppConfig> = {},
 ) {
   return buildApp({
-    config,
+    config: { ...config, ...configOverrides },
     provider,
     transcriptionWorkflow: createTranscriptionWorkflow(provider),
+    conversationStore,
   });
 }
 
@@ -282,7 +353,7 @@ test("returns a raw source-language transcription", async () => {
 });
 
 test("completes transcript text without accepting audio", async () => {
-  const app = await createTestApp();
+  const app = await createTestApp(new FakeProvider(), new RecordingConversationStore());
   try {
     const response = await app.inject({
       method: "POST",
@@ -296,6 +367,160 @@ test("completes transcript text without accepting audio", async () => {
     assert.equal(response.statusCode, 200);
     assert.equal(response.json().text, "Answer: What is the answer?");
     assert.equal(response.json().request_id, String(response.headers["x-request-id"]));
+  } finally {
+    await app.close();
+  }
+});
+
+test("persists the user message before the assistant message", async () => {
+  const conversationStore = new RecordingConversationStore();
+  const app = await createTestApp(new FakeProvider(), conversationStore);
+  try {
+    const response = await app.inject({
+      method: "POST",
+      url: "/chat-completions",
+      headers: {
+        authorization: `Bearer ${serviceToken}`,
+        "content-type": "application/json",
+      },
+      payload: JSON.stringify({ text: "what is cearense?", conversation_id: "conversation-1" }),
+    });
+    assert.equal(response.statusCode, 200);
+    assert.deepEqual(conversationStore.writes, [
+      { conversationId: "conversation-1" },
+      { conversationId: "conversation-1", role: "user", content: "what is cearense?" },
+      { conversationId: "conversation-1", role: "assistant", content: "Answer: what is cearense?" },
+    ]);
+    assert.equal(response.json().conversation_id, "conversation-1");
+  } finally {
+    await app.close();
+  }
+});
+
+test("enforces one deadline across chat persistence and provider work", async () => {
+  const provider = new FakeProvider();
+  provider.completeText = async (text, signal) => {
+    provider.completeCalls += 1;
+    await delayWithAbort(160, signal);
+    return `Answer: ${text}`;
+  };
+  const store = new SlowUserMessageStore();
+  const app = await createTestApp(provider, store, {
+    providerTimeoutMs: 1_000,
+    overallTimeoutMs: 250,
+  });
+  try {
+    const response = await app.inject({
+      method: "POST",
+      url: "/chat-completions",
+      headers: {
+        authorization: `Bearer ${serviceToken}`,
+        "content-type": "application/json",
+      },
+      payload: JSON.stringify({ text: "hello", conversation_id: "conversation-timeout" }),
+    });
+    assert.equal(response.statusCode, 504);
+    assert.equal(response.json().error.code, "provider_timeout");
+    assert.equal(provider.completeCalls, 1);
+    assert.deepEqual(store.writes, [
+      { conversationId: "conversation-timeout" },
+      { conversationId: "conversation-timeout", role: "user", content: "hello" },
+    ]);
+  } finally {
+    await app.close();
+  }
+});
+
+test("rejects conversation IDs that exceed the storage index limit", async () => {
+  const provider = new FakeProvider();
+  const store = new RecordingConversationStore();
+  const app = await createTestApp(provider, store);
+  try {
+    const response = await app.inject({
+      method: "POST",
+      url: "/chat-completions",
+      headers: {
+        authorization: `Bearer ${serviceToken}`,
+        "content-type": "application/json",
+      },
+      payload: JSON.stringify({ text: "hello", conversation_id: "x".repeat(1025) }),
+    });
+    assert.equal(response.statusCode, 400);
+    assert.equal(response.json().error.code, "invalid_input");
+    assert.equal(provider.completeCalls, 0);
+    assert.deepEqual(store.writes, []);
+  } finally {
+    await app.close();
+  }
+});
+
+test("fails chat before provider work when conversation persistence is not configured", async () => {
+  const provider = new FakeProvider();
+  const app = await createTestApp(provider);
+  try {
+    const response = await app.inject({
+      method: "POST",
+      url: "/chat-completions",
+      headers: {
+        authorization: `Bearer ${serviceToken}`,
+        "content-type": "application/json",
+      },
+      payload: JSON.stringify({ text: "what is cearense?" }),
+    });
+    assert.equal(response.statusCode, 503);
+    assert.equal(response.json().error.code, "conversation_store_unavailable");
+    assert.equal(provider.completeCalls, 0);
+  } finally {
+    await app.close();
+  }
+});
+
+test("keeps the user message when the provider fails", async () => {
+  const provider = new FakeProvider();
+  provider.completeText = async () => { throw new ProviderFailureError(); };
+  const store = new RecordingConversationStore();
+  const app = await createTestApp(provider, store);
+  try {
+    const response = await app.inject({
+      method: "POST",
+      url: "/chat-completions",
+      headers: {
+        authorization: `Bearer ${serviceToken}`,
+        "content-type": "application/json",
+      },
+      payload: JSON.stringify({ text: "what is cearense?" }),
+    });
+    assert.equal(response.statusCode, 502);
+    const conversationId = String(response.headers["x-request-id"]);
+    assert.deepEqual(store.writes, [
+      { conversationId },
+      { conversationId, role: "user", content: "what is cearense?" },
+    ]);
+  } finally {
+    await app.close();
+  }
+});
+
+test("does not return a completion when assistant-message persistence fails", async () => {
+  const store = new FailingConversationStore();
+  const app = await createTestApp(new FakeProvider(), store);
+  try {
+    const response = await app.inject({
+      method: "POST",
+      url: "/chat-completions",
+      headers: {
+        authorization: `Bearer ${serviceToken}`,
+        "content-type": "application/json",
+      },
+      payload: JSON.stringify({ text: "what is cearense?" }),
+    });
+    assert.equal(response.statusCode, 503);
+    assert.equal(response.json().error.code, "memory_persistence_failed");
+    const conversationId = String(response.headers["x-request-id"]);
+    assert.deepEqual(store.writes, [
+      { conversationId },
+      { conversationId, role: "user", content: "what is cearense?" },
+    ]);
   } finally {
     await app.close();
   }
