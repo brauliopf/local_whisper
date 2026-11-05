@@ -1,4 +1,5 @@
 import OpenAI, { toFile } from "openai";
+import type { ConversationMessage } from "./memory.js";
 import {
   ProviderAuthenticationError,
   ProviderFailureError,
@@ -39,7 +40,7 @@ export interface TranslationProvider {
 }
 
 export interface ChatCompletionProvider {
-  completeText(text: string, signal: AbortSignal): Promise<string>;
+  completeText(messages: ConversationMessage[], signal: AbortSignal): Promise<string>;
 }
 
 export type BackendProvider =
@@ -187,13 +188,13 @@ export class OpenAIImageTextProvider implements BackendProvider {
     return translation;
   }
 
-  async completeText(text: string, signal: AbortSignal): Promise<string> {
+  async completeText(messages: ConversationMessage[], signal: AbortSignal): Promise<string> {
     let response: OpenAI.Responses.Response;
     try {
       response = await this.client.responses.create(
         {
           model: this.encouragementModel,
-          input: text,
+          input: messages.map(({ role, content }) => ({ role, content })),
         },
         { signal },
       );

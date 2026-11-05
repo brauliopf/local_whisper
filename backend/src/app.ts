@@ -250,7 +250,7 @@ async function runWithDeadline<T>(
   request.raw.once("aborted", onAborted);
 
   const timeoutPromise = new Promise<never>((_, reject) => {
-    const timer = setTimeout(() => reject(new ProviderTimeoutError()), timeoutMs);
+    const timer = setTimeout(() => reject(new ProviderTimeoutError(timeoutOperation)), timeoutMs);
     controller.signal.addEventListener("abort", () => {
       if (!timedOut) clearTimeout(timer);
     }, { once: true });
@@ -438,7 +438,8 @@ export async function buildApp({
       );
     }
 
-    const conversationID = requestBody.conversation_id?.trim() || request.id;
+    const requestedConversationID = requestBody.conversation_id?.trim();
+    const conversationID = requestedConversationID || request.id;
     if (Buffer.byteLength(conversationID, "utf8") > maxConversationIDBytes) {
       throw new ApiError(400, "invalid_input", "The conversation_id is too long.");
     }
@@ -467,7 +468,20 @@ export async function buildApp({
       return;
     }
 
-    const completion = await runChatOperation((signal) => provider.completeText(text, signal));
+    const messages = requestedConversationID
+      ? await runChatOperation(
+          (signal) => conversationStore.loadMessages(conversationID, signal),
+          "load_messages",
+        )
+      : [{ role: "user" as const, content: text }];
+    if (!messages || reply.raw.destroyed) {
+      return;
+    }
+
+    const completion = await runChatOperation(
+      (signal) => provider.completeText(messages, signal),
+      "provider_completion",
+    );
     if (completion === undefined || reply.raw.destroyed) {
       return;
     }

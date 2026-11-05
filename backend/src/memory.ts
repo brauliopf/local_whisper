@@ -10,8 +10,14 @@ export class MemoryPersistenceError extends Error {
 
 export type ConversationMessageRole = "user" | "assistant";
 
+export interface ConversationMessage {
+  role: ConversationMessageRole;
+  content: string;
+}
+
 export interface ConversationStore {
   ensureConversation(conversationId: string, signal?: AbortSignal): Promise<void>;
+  loadMessages(conversationId: string, signal?: AbortSignal): Promise<ConversationMessage[]>;
   appendMessage(
     conversationId: string,
     role: ConversationMessageRole,
@@ -30,7 +36,7 @@ export class PostgresConversationStore implements ConversationStore {
 
   async ensureConversation(conversationId: string, signal?: AbortSignal): Promise<void> {
     await this.post(
-      `/rest/v1/conversations?on_conflict=id`,
+      "/rest/v1/conversations?on_conflict=id",
       { id: conversationId },
       signal,
       "resolution=ignore-duplicates",
@@ -77,6 +83,47 @@ export class PostgresConversationStore implements ConversationStore {
           signal.aborted ? `${operation}_timeout` : operation,
         );
       }
+    }
+  }
+
+  async loadMessages(conversationId: string, signal?: AbortSignal): Promise<ConversationMessage[]> {
+    const messages: ConversationMessage[] = [];
+    let offset = 0;
+
+    while (true) {
+      const url = new URL("/rest/v1/messages", this.baseURL);
+      url.searchParams.set("select", "role,content");
+      url.searchParams.set("conversation_id", `eq.${conversationId}`);
+      url.searchParams.set("order", "id.asc");
+
+      let response: Response;
+      try {
+        response = await fetch(url, {
+          headers: {
+            apikey: this.secretKey,
+            authorization: `Bearer ${this.secretKey}`,
+            "Range-Unit": "items",
+            Range: `${offset}-${offset + 999}`,
+          },
+          signal,
+        });
+      } catch (error) {
+        if (signal?.aborted) throw error;
+        throw new MemoryPersistenceError(0, "load_messages");
+      }
+
+      if (!response.ok) {
+        throw new MemoryPersistenceError(response.status, "load_messages");
+      }
+      let page: ConversationMessage[];
+      try {
+        page = await response.json() as ConversationMessage[];
+      } catch {
+        throw new MemoryPersistenceError(response.status, "load_messages");
+      }
+      messages.push(...page);
+      if (page.length === 0) return messages;
+      offset += page.length;
     }
   }
 
