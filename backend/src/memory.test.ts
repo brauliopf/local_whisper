@@ -26,7 +26,9 @@ test("startup check verifies both Supabase conversation tables", async (t) => {
 
 test("startup check bounds probes and identifies timeout safely", async (t) => {
   const originalFetch = globalThis.fetch;
+  const keepEventLoopAlive = setTimeout(() => {}, 50);
   t.after(() => {
+    clearTimeout(keepEventLoopAlive);
     globalThis.fetch = originalFetch;
   });
   globalThis.fetch = async (_input, init) => new Promise<Response>((_resolve, reject) => {
