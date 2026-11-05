@@ -78,8 +78,13 @@ fi
 backend_log="$smoke_dir/backend.log"
 backend_status="$smoke_dir/status.json"
 backend_pid=''
+supabase_mock_pid=''
 
 cleanup() {
+  if [ -n "$supabase_mock_pid" ]; then
+    kill "$supabase_mock_pid" 2>/dev/null || true
+    wait "$supabase_mock_pid" 2>/dev/null || true
+  fi
   if [ -n "$backend_pid" ]; then
     kill "$backend_pid" 2>/dev/null || true
     wait "$backend_pid" 2>/dev/null || true
@@ -88,9 +93,37 @@ cleanup() {
 }
 trap cleanup EXIT
 
+node --input-type=module -e '
+  import { createServer } from "node:http";
+  const server = createServer((request, response) => {
+    const path = new URL(request.url ?? "/", "http://localhost").pathname;
+    const authorized = request.headers.apikey === "test-supabase-key" &&
+      request.headers.authorization === "Bearer test-supabase-key";
+    if (!authorized || !["/rest/v1/conversations", "/rest/v1/messages"].includes(path)) {
+      response.writeHead(401).end();
+      return;
+    }
+    response.writeHead(200, { "content-type": "application/json" }).end("[]");
+  });
+  server.listen(18082, "127.0.0.1");
+' > "$smoke_dir/supabase.log" 2>&1 &
+supabase_mock_pid=$!
+
+run_check "local Supabase startup-check mock" bash -c "
+  for attempt in \$(seq 1 20); do
+    if curl --silent --fail 'http://127.0.0.1:18082/rest/v1/conversations?select=id&limit=0' \\
+      -H 'apikey: test-supabase-key' -H 'Authorization: Bearer test-supabase-key' >/dev/null; then
+      exit 0
+    fi
+    sleep 0.25
+  done
+  exit 1
+"
+
 run_check "backend status smoke test" bash -c "
   cd '$backend_dir'
-  PORT=18080 OPENAI_API_KEY=test-openai-key SERVICE_TOKEN=test-service-token \
+  PORT=18080 OPENAI_API_KEY=test-openai-key SERVICE_TOKEN=test-service-token \\
+    SUPABASE_URL=http://127.0.0.1:18082 SUPABASE_SECRET_KEY=test-supabase-key \\
     node dist/server.js > '$backend_log' 2>&1 &
   pid=\$!
   for attempt in \$(seq 1 20); do
@@ -107,7 +140,8 @@ run_check "backend status smoke test" bash -c "
 
 run_check "backend authentication smoke test" bash -c "
   cd '$backend_dir'
-  PORT=18081 OPENAI_API_KEY=test-openai-key SERVICE_TOKEN=test-service-token \
+  PORT=18081 OPENAI_API_KEY=test-openai-key SERVICE_TOKEN=test-service-token \\
+    SUPABASE_URL=http://127.0.0.1:18082 SUPABASE_SECRET_KEY=test-supabase-key \\
     node dist/server.js > '$backend_log' 2>&1 &
   pid=\$!
   for attempt in \$(seq 1 20); do

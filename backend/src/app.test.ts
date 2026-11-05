@@ -490,6 +490,37 @@ test("enforces one deadline across chat persistence and provider work", async ()
   }
 });
 
+test("logs the persistence operation when its deadline expires", async () => {
+  const logs: string[] = [];
+  const provider = new FakeProvider();
+  const store = new SlowUserMessageStore();
+  const app = await buildApp({
+    config: { ...config, providerTimeoutMs: 1_000, overallTimeoutMs: 50 },
+    provider,
+    transcriptionWorkflow: createTranscriptionWorkflow(provider),
+    conversationStore: store,
+    logger: { level: "error", stream: { write: (message) => logs.push(message) } },
+  });
+  try {
+    const response = await app.inject({
+      method: "POST",
+      url: "/chat-completions",
+      headers: {
+        authorization: `Bearer ${serviceToken}`,
+        "content-type": "application/json",
+      },
+      payload: JSON.stringify({ text: "private prompt", conversation_id: "conversation-timeout" }),
+    });
+    assert.equal(response.statusCode, 504);
+    const failureLog = logs.map((message) => JSON.parse(message))
+      .find((entry: { msg?: string }) => entry.msg === "request_failed");
+    assert.equal(failureLog?.operation, "user_message_write");
+    assert.equal(logs.join("").includes("private prompt"), false);
+  } finally {
+    await app.close();
+  }
+});
+
 test("rejects conversation IDs that exceed the storage index limit", async () => {
   const provider = new FakeProvider();
   const store = new RecordingConversationStore();

@@ -24,7 +24,7 @@ export class ApiError extends Error {
 }
 
 export class ProviderTimeoutError extends Error {
-  constructor() {
+  constructor(readonly operation?: string) {
     super("The provider request timed out");
     this.name = "ProviderTimeoutError";
   }

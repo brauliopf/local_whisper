@@ -1,6 +1,7 @@
 import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
 import Fastify, {
   type FastifyInstance,
+  type FastifyLoggerOptions,
   type FastifyReply,
   type FastifyRequest,
 } from "fastify";
@@ -31,6 +32,7 @@ export interface AppDependencies {
   provider: BackendProvider;
   transcriptionWorkflow: TranscriptionWorkflow;
   conversationStore?: ConversationStore;
+  logger?: boolean | FastifyLoggerOptions;
 }
 
 class ClientDisconnectedError extends Error {
@@ -231,6 +233,7 @@ async function runWithDeadline<T>(
   config: AppConfig,
   providerTimeoutMs = config.providerTimeoutMs,
   overallTimeoutMs = config.overallTimeoutMs,
+  timeoutOperation?: string,
 ): Promise<T | undefined> {
   const controller = new AbortController();
   let timedOut = false;
@@ -247,7 +250,7 @@ async function runWithDeadline<T>(
   request.raw.once("aborted", onAborted);
 
   const timeoutPromise = new Promise<never>((_, reject) => {
-    const timer = setTimeout(() => reject(new ProviderTimeoutError()), timeoutMs);
+    const timer = setTimeout(() => reject(new ProviderTimeoutError(timeoutOperation)), timeoutMs);
     controller.signal.addEventListener("abort", () => {
       if (!timedOut) clearTimeout(timer);
     }, { once: true });
@@ -267,7 +270,7 @@ async function runWithDeadline<T>(
       return undefined;
     }
     if (timedOut || error instanceof ProviderTimeoutError) {
-      throw new ProviderTimeoutError();
+      throw new ProviderTimeoutError(timeoutOperation);
     }
     throw error;
   } finally {
@@ -281,6 +284,7 @@ export async function buildApp({
   provider,
   transcriptionWorkflow,
   conversationStore,
+  logger = true,
 }: AppDependencies): Promise<FastifyInstance> {
   const expectedTokenDigest = createHash("sha256").update(config.serviceToken).digest();
   const rateLimiter = new FixedWindowRateLimiter(
@@ -291,7 +295,7 @@ export async function buildApp({
   const app = Fastify({
     bodyLimit: config.requestBodyMaxBytes,
     genReqId: () => randomUUID(),
-    logger: true,
+    logger,
   });
 
   await app.register(multipart, {
@@ -394,10 +398,13 @@ export async function buildApp({
 
   app.post("/chat-completions", async (request, reply) => {
     const deadline = Date.now() + config.overallTimeoutMs;
-    const runChatOperation = <T>(operation: (signal: AbortSignal) => Promise<T>) => {
+    const runChatOperation = <T>(
+      operation: (signal: AbortSignal) => Promise<T>,
+      timeoutOperation?: string,
+    ) => {
       const remainingMs = deadline - Date.now();
       if (remainingMs <= 0) {
-        throw new ProviderTimeoutError();
+        throw new ProviderTimeoutError(timeoutOperation);
       }
       return runWithDeadline(
         request,
@@ -405,6 +412,7 @@ export async function buildApp({
         config,
         config.providerTimeoutMs,
         remainingMs,
+        timeoutOperation,
       );
     };
 
@@ -447,7 +455,7 @@ export async function buildApp({
     const conversationCreated = await runChatOperation(async (signal) => {
       await conversationStore.ensureConversation(conversationID, signal);
       return true;
-    });
+    }, "ensure_conversation");
     if (conversationCreated !== true || reply.raw.destroyed) {
       return;
     }
@@ -455,19 +463,25 @@ export async function buildApp({
     const userMessagePersisted = await runChatOperation(async (signal) => {
       await conversationStore.appendMessage(conversationID, "user", text, signal);
       return true;
-    });
+    }, "user_message_write");
     if (userMessagePersisted !== true || reply.raw.destroyed) {
       return;
     }
 
     const messages = requestedConversationID
-      ? await runChatOperation((signal) => conversationStore.loadMessages(conversationID, signal))
+      ? await runChatOperation(
+          (signal) => conversationStore.loadMessages(conversationID, signal),
+          "load_messages",
+        )
       : [{ role: "user" as const, content: text }];
     if (!messages || reply.raw.destroyed) {
       return;
     }
 
-    const completion = await runChatOperation((signal) => provider.completeText(messages, signal));
+    const completion = await runChatOperation(
+      (signal) => provider.completeText(messages, signal),
+      "provider_completion",
+    );
     if (completion === undefined || reply.raw.destroyed) {
       return;
     }
@@ -479,7 +493,7 @@ export async function buildApp({
     const assistantMessagePersisted = await runChatOperation(async (signal) => {
       await conversationStore.appendMessage(conversationID, "assistant", assistantText, signal);
       return true;
-    });
+    }, "assistant_message_write");
     if (assistantMessagePersisted !== true || reply.raw.destroyed) {
       return;
     }
@@ -539,7 +553,16 @@ export async function buildApp({
   app.setErrorHandler((error, request, reply) => {
     const apiError = toApiError(error);
     request.log.error(
-      { requestId: request.id, code: apiError.code, statusCode: apiError.statusCode },
+      {
+        requestId: request.id,
+        code: apiError.code,
+        statusCode: apiError.statusCode,
+        ...(error instanceof MemoryPersistenceError
+          ? { operation: error.operation }
+          : error instanceof ProviderTimeoutError && error.operation
+            ? { operation: error.operation }
+            : {}),
+      },
       "request_failed",
     );
     if (reply.sent || reply.raw.destroyed) {
