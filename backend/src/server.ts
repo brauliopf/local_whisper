@@ -39,6 +39,27 @@ const app = await buildApp({
   conversationStore,
 });
 
+if (!conversationStore) {
+  app.log.fatal(
+    { missing: ["SUPABASE_URL", "SUPABASE_SECRET_KEY"] },
+    "supabase_configuration_missing",
+  );
+  await app.close();
+  throw new Error("SUPABASE_URL and SUPABASE_SECRET_KEY are required to start the backend.");
+}
+
+try {
+  await conversationStore.checkConnection();
+  app.log.info(
+    { tables: ["conversations", "messages"] },
+    "supabase_startup_check_succeeded",
+  );
+} catch (error) {
+  app.log.fatal({ err: error }, "supabase_startup_check_failed");
+  await app.close();
+  throw new Error("Supabase conversation tables are not available at startup.", { cause: error });
+}
+
 const close = async (signal: string) => {
   app.log.info({ signal }, "shutting_down");
   await app.close();
