@@ -148,7 +148,12 @@ final class StatusItem: NSObject {
                 defer: false
             )
             window.title = "Settings"
-            let hostingView = NSHostingView(rootView: SettingsView(tokenState: coordinator.tokenState))
+            let hostingView = NSHostingView(
+                rootView: SettingsView(
+                    tokenState: coordinator.tokenState,
+                    voiceChat: coordinator.voiceChat
+                )
+            )
             hostingView.frame = window.contentView?.bounds ?? .zero
             hostingView.autoresizingMask = [.width, .height]
             window.contentView = hostingView

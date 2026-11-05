@@ -28,6 +28,10 @@ final class VoiceChat {
     private let capture: any VoiceCapturing
     private var chatTask: Task<Void, Never>?
 
+    var isBusy: Bool {
+        chatTask != nil || phase == .recording || phase == .transcribing || phase == .completing
+    }
+
     init(
         backend: any BackendClienting,
         tokenState: ServiceTokenState,
@@ -112,9 +116,14 @@ final class VoiceChat {
 
                 phase = .completing
                 toast.show(message: "Thinking…", isError: false, autoDismiss: false)
-                let text = try await backend.complete(text: trimmedTranscript, serviceToken: serviceToken)
+                let result = try await backend.complete(
+                    text: trimmedTranscript,
+                    conversationID: ConversationIDSettings.activeID,
+                    serviceToken: serviceToken
+                )
                 guard !Task.isCancelled else { return }
-                response = text
+                ConversationIDSettings.activeID = result.conversationID
+                response = result.text
                 openWindow?()
                 phase = .response
                 toast.show(message: "Response ready", isError: false)

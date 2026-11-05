@@ -22,15 +22,28 @@ nonisolated enum BackendError: LocalizedError, Sendable {
 
 nonisolated struct ChatCompletionRequest: Encodable, Sendable {
     let text: String
+    let conversationID: String?
+
+    enum CodingKeys: String, CodingKey {
+        case text
+        case conversationID = "conversation_id"
+    }
+}
+
+nonisolated struct ChatCompletionResult: Sendable {
+    let text: String
+    let conversationID: String
 }
 
 nonisolated struct BackendImageTextResponse: Decodable, Sendable {
     let text: String?
     let requestID: String
+    let conversationID: String?
 
     enum CodingKeys: String, CodingKey {
         case text
         case requestID = "request_id"
+        case conversationID = "conversation_id"
     }
 }
 
@@ -39,7 +52,11 @@ nonisolated protocol BackendClienting: Sendable {
     func fetchEncouragement(serviceToken: String) async throws -> String
     func transcribeAudio(at fileURL: URL, serviceToken: String) async throws -> String
     func transcribeSourceAudio(at fileURL: URL, serviceToken: String) async throws -> String
-    func complete(text: String, serviceToken: String) async throws -> String
+    func complete(
+        text: String,
+        conversationID: String?,
+        serviceToken: String
+    ) async throws -> ChatCompletionResult
 }
 
 nonisolated enum BackendConfiguration {
@@ -108,19 +125,27 @@ actor BackendClient: BackendClienting {
         try await transcribe(at: fileURL, path: "source-transcriptions", serviceToken: serviceToken)
     }
 
-    func complete(text: String, serviceToken: String) async throws -> String {
+    func complete(
+        text: String,
+        conversationID: String?,
+        serviceToken: String
+    ) async throws -> ChatCompletionResult {
         guard !serviceToken.isEmpty else { throw BackendError.missingServiceToken }
         var request = makeRequest(path: "chat-completions", serviceToken: serviceToken)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try JSONEncoder().encode(ChatCompletionRequest(text: text))
+        request.httpBody = try JSONEncoder().encode(
+            ChatCompletionRequest(text: text, conversationID: conversationID)
+        )
 
         let response: BackendImageTextResponse = try await send(request)
         guard let responseText = response.text?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !responseText.isEmpty else {
+              !responseText.isEmpty,
+              let responseConversationID = response.conversationID?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !responseConversationID.isEmpty else {
             throw BackendError.invalidResponse
         }
-        return responseText
+        return ChatCompletionResult(text: responseText, conversationID: responseConversationID)
     }
 
     private func transcribe(at fileURL: URL, path: String, serviceToken: String) async throws -> String {
