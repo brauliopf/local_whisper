@@ -3,14 +3,17 @@ import SwiftUI
 @MainActor
 struct SettingsView: View {
     private let tokenState: ServiceTokenState
+    private let voiceChat: VoiceChat
 
+    @AppStorage(ConversationIDSettings.activeIDKey) private var activeConversationID = ""
     @State private var serviceToken = ""
     @State private var backendStatusMessage: String?
     @State private var countdownMinutesText = String(TimerSettings.minutes)
     @FocusState private var countdownMinutesFocused: Bool
 
-    init(tokenState: ServiceTokenState) {
+    init(tokenState: ServiceTokenState, voiceChat: VoiceChat) {
         self.tokenState = tokenState
+        self.voiceChat = voiceChat
     }
 
     var body: some View {
@@ -38,6 +41,17 @@ struct SettingsView: View {
                 Text("Backend")
             } footer: {
                 Text("The token is stored securely in the macOS Keychain. Voice input is English-only and is transcribed without automatic translation.")
+            }
+
+            Section {
+                Button("Reset conversation") {
+                    activeConversationID = ""
+                }
+                .disabled(activeConversationID.isEmpty || voiceChat.isBusy)
+            } header: {
+                Text("Conversation")
+            } footer: {
+                Text("Starts a new conversation. Previous messages remain stored on the server.")
             }
 
             Section {

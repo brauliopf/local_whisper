@@ -6,7 +6,10 @@ struct local_whisperApp: App {
 
     var body: some Scene {
         Settings {
-            SettingsView(tokenState: appDelegate.coordinator.tokenState)
+            SettingsView(
+                tokenState: appDelegate.coordinator.tokenState,
+                voiceChat: appDelegate.coordinator.voiceChat
+            )
         }
     }
 }
