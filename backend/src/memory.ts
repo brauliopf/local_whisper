@@ -15,6 +15,13 @@ export interface ConversationMessage {
   content: string;
 }
 
+export interface EntityMemoryRecord {
+  name: string;
+  type: string;
+  description: string;
+  embedding: number[];
+}
+
 export interface ConversationStore {
   ensureConversation(conversationId: string, signal?: AbortSignal): Promise<void>;
   loadMessages(conversationId: string, signal?: AbortSignal): Promise<ConversationMessage[]>;
@@ -22,6 +29,11 @@ export interface ConversationStore {
     conversationId: string,
     role: ConversationMessageRole,
     content: string,
+    signal?: AbortSignal,
+  ): Promise<void>;
+  appendEntities(
+    accountId: string,
+    entities: EntityMemoryRecord[],
     signal?: AbortSignal,
   ): Promise<void>;
 }
@@ -41,6 +53,21 @@ export class PostgresConversationStore implements ConversationStore {
       signal,
       "resolution=ignore-duplicates",
       "ensure_conversation",
+    );
+  }
+
+  async appendEntities(
+    accountId: string,
+    entities: EntityMemoryRecord[],
+    signal?: AbortSignal,
+  ): Promise<void> {
+    if (entities.length === 0) return;
+    await this.post(
+      "/rest/v1/entities",
+      entities.map((entity) => ({ ...entity, account_id: accountId })),
+      signal,
+      undefined,
+      "entity_batch_write",
     );
   }
 

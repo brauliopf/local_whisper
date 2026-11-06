@@ -3,7 +3,7 @@ import { test } from "node:test";
 import type { AppConfig } from "./config.js";
 import { buildApp } from "./app.js";
 import { ProviderFailureError } from "./errors.js";
-import type { BackendProvider } from "./provider.js";
+import type { BackendProvider, ExtractedEntity } from "./provider.js";
 import { TranscriptionWorkflow } from "./transcription.js";
 
 const config: AppConfig = {
@@ -52,6 +52,14 @@ class FailingProvider implements BackendProvider {
   }
 
   async completeText(): Promise<string> {
+    throw new ProviderFailureError();
+  }
+
+  async extractEntities(): Promise<ExtractedEntity[]> {
+    throw new ProviderFailureError();
+  }
+
+  async embedTexts(): Promise<number[][]> {
     throw new ProviderFailureError();
   }
 }
