@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { AppConfig } from "./config.js";
-import { buildApp } from "./app.js";
-import type { BackendProvider } from "./provider.js";
+import { buildApp, type AppDependencies } from "./app.js";
+import type { BackendProvider, ExtractedEntity } from "./provider.js";
 import { TranscriptionWorkflow } from "./transcription.js";
 import {
   MemoryPersistenceError,
@@ -10,6 +10,7 @@ import {
   type ConversationStore,
 } from "./memory.js";
 import { ProviderFailureError } from "./errors.js";
+import { defaultAccountId, EntityMemoryService } from "./entity-memory.js";
 
 const serviceToken = "test-service-token";
 const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0xff, 0xd9]);
@@ -50,6 +51,7 @@ class RecordingConversationStore implements ConversationStore {
   }> = [];
   readonly messages: ConversationMessage[] = [];
   readonly loads: string[] = [];
+  readonly entityWrites: Array<{ accountId: string; entities: unknown[] }> = [];
 
   async ensureConversation(conversationId: string): Promise<void> {
     this.writes.push({ conversationId });
@@ -67,6 +69,10 @@ class RecordingConversationStore implements ConversationStore {
   ): Promise<void> {
     this.writes.push({ conversationId, role, content });
     this.messages.push({ role, content });
+  }
+
+  async appendEntities(accountId: string, entities: unknown[]): Promise<void> {
+    this.entityWrites.push({ accountId, entities });
   }
 }
 
@@ -137,6 +143,14 @@ class FakeProvider implements BackendProvider {
 
   readonly receivedMessages: ConversationMessage[][] = [];
 
+  async extractEntities() {
+    return [];
+  }
+
+  async embedTexts() {
+    return [];
+  }
+
   async completeText(messages: ConversationMessage[], _signal?: AbortSignal): Promise<string> {
     this.completeCalls += 1;
     this.receivedMessages.push(messages.map((message) => ({ ...message })));
@@ -184,12 +198,16 @@ async function createTestApp(
   provider: BackendProvider = new FakeProvider(),
   conversationStore?: ConversationStore,
   configOverrides: Partial<AppConfig> = {},
+  entityMemory?: Pick<EntityMemoryService, "recordTurn">,
+  logger?: AppDependencies["logger"],
 ) {
   return buildApp({
     config: { ...config, ...configOverrides },
     provider,
     transcriptionWorkflow: createTranscriptionWorkflow(provider),
     conversationStore,
+    entityMemory,
+    logger,
   });
 }
 
@@ -425,6 +443,196 @@ test("loads conversation history into the completion request", async () => {
       { role: "user", content: "what is cearense?" },
     ]]);
     assert.equal(response.json().conversation_id, "conversation-1");
+  } finally {
+    await app.close();
+  }
+});
+
+test("stores only exact, contextual entity evidence and preserves duplicates", async () => {
+  const evidence = "Lina is my daughter. I'll pick her up at school every day.";
+  const stripeEvidence = "Stripe account runs on sk_live_abcdefghijk.";
+  const stripeTestEvidence = "Stripe test account uses sk_test_abcdefghijk.";
+  const apiKeyEvidence = "Lina's API key is sk" + "-abcdefghijk";
+  const text = `${evidence} After her mom puts her to bed, I'll review. ${apiKeyEvidence}. ${stripeEvidence} ${stripeTestEvidence}`;
+  const entity = { name: "Lina", type: "PERSON" as const, evidence };
+  let extractedText = "";
+  let embeddedTexts: string[] = [];
+  const store = new RecordingConversationStore();
+  const service = new EntityMemoryService(
+    {
+      async extractEntities(input): Promise<ExtractedEntity[]> {
+        extractedText = input;
+        return [
+          entity,
+          entity,
+          { name: "Lina", type: "PERSON", evidence: "Lina." },
+          { name: "Lina's mom", type: "PERSON", evidence: "her mom puts her to bed" },
+          { name: "Lina", type: "PERSON", evidence: apiKeyEvidence },
+          { name: "Stripe", type: "ORGANIZATION", evidence: stripeEvidence },
+          { name: "Stripe", type: "ORGANIZATION", evidence: stripeTestEvidence },
+          { name: "Unknown", type: "PERSON", evidence: "not in the transcript" },
+        ];
+      },
+      async embedTexts(inputs) {
+        embeddedTexts = inputs;
+        return inputs.map(() => Array(1536).fill(0));
+      },
+    },
+    store,
+  );
+
+  await service.recordTurn(text, new AbortController().signal);
+
+  assert.equal(extractedText, text);
+  assert.deepEqual(embeddedTexts, [
+    `Lina (PERSON): ${evidence}`,
+    `Lina (PERSON): ${evidence}`,
+  ]);
+  assert.equal(store.entityWrites.length, 1);
+  assert.equal(store.entityWrites[0]?.accountId, defaultAccountId);
+  assert.deepEqual(store.entityWrites[0]?.entities, [
+    { name: "Lina", type: "PERSON", description: evidence, embedding: Array(1536).fill(0) },
+    { name: "Lina", type: "PERSON", description: evidence, embedding: Array(1536).fill(0) },
+  ]);
+});
+
+test("does not persist incomplete entity embeddings", async () => {
+  const store = new RecordingConversationStore();
+  const service = new EntityMemoryService(
+    {
+      async extractEntities(): Promise<ExtractedEntity[]> {
+        return [{ name: "Lina", type: "PERSON", evidence: "I'll pick up Lina." }];
+      },
+      async embedTexts() {
+        return [[0.25]];
+      },
+    },
+    store,
+  );
+
+  await assert.rejects(service.recordTurn("I'll pick up Lina.", new AbortController().signal));
+  assert.equal(store.entityWrites.length, 0);
+});
+
+test("rejects client-supplied account IDs before any chat persistence or memory work", async () => {
+  const provider = new FakeProvider();
+  const store = new RecordingConversationStore();
+  let memoryCalls = 0;
+  const app = await createTestApp(provider, store, {}, {
+    async recordTurn() {
+      memoryCalls += 1;
+    },
+  });
+  try {
+    const response = await app.inject({
+      method: "POST",
+      url: "/chat-completions",
+      headers: {
+        authorization: `Bearer ${serviceToken}`,
+        "content-type": "application/json",
+      },
+      payload: JSON.stringify({ text: "Pick up Lina.", account_id: defaultAccountId }),
+    });
+
+    assert.equal(response.statusCode, 400);
+    assert.deepEqual(store.writes, []);
+    assert.equal(memoryCalls, 0);
+    assert.equal(provider.completeCalls, 0);
+  } finally {
+    await app.close();
+  }
+});
+
+test("runs entity memory on the current turn before completion and continues on failure", async () => {
+  const events: string[] = [];
+  const logLines: string[] = [];
+  const provider = new FakeProvider();
+  const store = new RecordingConversationStore();
+  store.messages.push(
+    { role: "user", content: "Old user message." },
+    { role: "assistant", content: "Old assistant response." },
+  );
+  provider.completeText = async (messages) => {
+    events.push("completion");
+    provider.completeCalls += 1;
+    provider.receivedMessages.push(messages);
+    return "Done.";
+  };
+  const app = await createTestApp(
+    provider,
+    store,
+    { overallTimeoutMs: 6_000 },
+    {
+      async recordTurn(text) {
+        events.push(`memory:${text}`);
+        throw new Error(`sensitive exception: ${text}`);
+      },
+    },
+    { level: "warn", stream: { write: (message) => logLines.push(message) } },
+  );
+  try {
+    const response = await app.inject({
+      method: "POST",
+      url: "/chat-completions",
+      headers: {
+        authorization: `Bearer ${serviceToken}`,
+        "content-type": "application/json",
+      },
+      payload: JSON.stringify({ text: "Pick up Lina at school.", conversation_id: "conversation-1" }),
+    });
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.json().text, "Done.");
+    assert.deepEqual(events, ["memory:Pick up Lina at school.", "completion"]);
+    const logs = logLines.join("");
+    assert.match(logs, /entity_memory_failed/);
+    assert.equal(logs.includes("Pick up Lina at school."), false);
+    assert.equal(logs.includes("sensitive exception"), false);
+    assert.deepEqual(provider.receivedMessages[0], [
+      { role: "user", content: "Old user message." },
+      { role: "assistant", content: "Old assistant response." },
+      { role: "user", content: "Pick up Lina at school." },
+    ]);
+  } finally {
+    await app.close();
+  }
+});
+
+test("bounds entity memory and leaves the provider completion budget available", async () => {
+  const events: string[] = [];
+  const provider = new FakeProvider();
+  provider.completeText = async (_messages, signal) => {
+    events.push("completion");
+    await delayWithAbort(400, signal);
+    return "Done.";
+  };
+  const app = await createTestApp(provider, new RecordingConversationStore(), {
+    providerTimeoutMs: 500,
+    overallTimeoutMs: 5_600,
+  }, {
+    async recordTurn(_text, signal) {
+      events.push("memory");
+      try {
+        await delayWithAbort(300, signal);
+      } catch {
+        events.push("memory-aborted");
+        throw new Error("entity operation timed out");
+      }
+    },
+  });
+  try {
+    const response = await app.inject({
+      method: "POST",
+      url: "/chat-completions",
+      headers: {
+        authorization: `Bearer ${serviceToken}`,
+        "content-type": "application/json",
+      },
+      payload: JSON.stringify({ text: "Pick up Lina." }),
+    });
+
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.json().text, "Done.");
+    assert.deepEqual(events, ["memory", "memory-aborted", "completion"]);
   } finally {
     await app.close();
   }

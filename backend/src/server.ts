@@ -4,6 +4,7 @@ import { createOpenAIImageTextProvider } from "./provider.js";
 import { TranscriptionWorkflow } from "./transcription.js";
 import { createTypeSafeLanguageClassifier } from "./typesafe.js";
 import { PostgresConversationStore } from "./memory.js";
+import { EntityMemoryService } from "./entity-memory.js";
 
 const config = loadConfig();
 const provider = createOpenAIImageTextProvider(
@@ -31,12 +32,16 @@ const conversationStore = config.conversationStoreURL && config.conversationStor
       config.conversationStoreSecretKey,
     )
   : undefined;
+const entityMemory = conversationStore
+  ? new EntityMemoryService(provider, conversationStore)
+  : undefined;
 
 const app = await buildApp({
   config,
   provider,
   transcriptionWorkflow,
   conversationStore,
+  entityMemory,
 });
 
 if (!conversationStore) {

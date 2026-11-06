@@ -84,6 +84,39 @@ test("assistant persistence errors identify the failed operation", async (t) => 
   });
 });
 
+test("inserts complete account-scoped entity records through PostgREST", async (t) => {
+  const originalFetch = globalThis.fetch;
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+  let requestURL = "";
+  let requestBody = "";
+  globalThis.fetch = async (input, init) => {
+    requestURL = String(input);
+    requestBody = String(init?.body);
+    assert.equal(init?.method, "POST");
+    assert.equal(new Headers(init?.headers).get("authorization"), "Bearer test-secret");
+    return Response.json([]);
+  };
+
+  const store = new PostgresConversationStore("https://example.supabase.co", "test-secret");
+  await store.appendEntities("account-1", [{
+    name: "Lina",
+    type: "PERSON",
+    description: "I'll pick up Lina at school.",
+    embedding: [0.1, 0.2],
+  }]);
+
+  assert.equal(new URL(requestURL).pathname, "/rest/v1/entities");
+  assert.deepEqual(JSON.parse(requestBody), [{
+    name: "Lina",
+    type: "PERSON",
+    description: "I'll pick up Lina at school.",
+    embedding: [0.1, 0.2],
+    account_id: "account-1",
+  }]);
+});
+
 test("loads all messages across ordered PostgREST pages", async (t) => {
   const originalFetch = globalThis.fetch;
   const expected = Array.from({ length: 1001 }, (_, index) => ({

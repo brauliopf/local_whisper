@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { randomUUID } from "node:crypto";
 import { PostgresConversationStore } from "./memory.js";
+import { defaultAccountId } from "./entity-memory.js";
+import { entityEmbeddingDimensions } from "./provider.js";
 
 const baseURL = process.env.SUPABASE_URL?.replace(/\/$/, "");
 const secretKey = process.env.SUPABASE_SECRET_KEY;
@@ -76,6 +78,58 @@ test(
           { method: "DELETE", headers: headers() },
         );
         assert.ok(conversationCleanup.ok, await conversationCleanup.text());
+      }
+    }
+  },
+);
+
+test(
+  "PostgREST stores account-scoped entities with vector embeddings",
+  { skip: !configured ? "Set SUPABASE_URL and SUPABASE_SECRET_KEY" : false },
+  async () => {
+    const entityName = `integration-${randomUUID()}`;
+    const store = new PostgresConversationStore(baseURL!, secretKey!);
+    let entityCreated = false;
+
+    try {
+      await store.appendEntities(defaultAccountId, [{
+        name: entityName,
+        type: "SYSTEM",
+        description: `Integration test entity ${entityName}`,
+        embedding: Array(entityEmbeddingDimensions).fill(0),
+      }]);
+      entityCreated = true;
+
+      const query = new URLSearchParams({
+        select: "name,type,description,account_id,embedding",
+        name: `eq.${entityName}`,
+      });
+      const response = await fetch(`${baseURL}/rest/v1/entities?${query}`, { headers: headers() });
+      const body = await response.text();
+      assert.equal(response.status, 200, body);
+      const rows = JSON.parse(body) as Array<{
+        name: string;
+        type: string;
+        description: string;
+        account_id: string;
+        embedding: string | number[];
+      }>;
+      assert.equal(rows.length, 1);
+      assert.equal(rows[0]?.name, entityName);
+      assert.equal(rows[0]?.type, "SYSTEM");
+      assert.equal(rows[0]?.account_id, defaultAccountId);
+      const embedding = typeof rows[0]?.embedding === "string"
+        ? JSON.parse(rows[0].embedding)
+        : rows[0]?.embedding;
+      assert.equal(embedding?.length, entityEmbeddingDimensions);
+      assert.equal(embedding?.[0], 0);
+    } finally {
+      if (entityCreated) {
+        const cleanup = await fetch(
+          `${baseURL}/rest/v1/entities?name=eq.${encodeURIComponent(entityName)}`,
+          { method: "DELETE", headers: headers() },
+        );
+        assert.ok(cleanup.ok, await cleanup.text());
       }
     }
   },

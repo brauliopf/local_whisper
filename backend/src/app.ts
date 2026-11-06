@@ -21,6 +21,7 @@ import type {
 } from "./provider.js";
 import type { TranscriptionWorkflow } from "./transcription.js";
 import { MemoryPersistenceError, type ConversationStore } from "./memory.js";
+import type { EntityMemoryService } from "./entity-memory.js";
 
 const jpegHeader = Buffer.from([0xff, 0xd8, 0xff]);
 const pngHeader = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
@@ -32,6 +33,7 @@ export interface AppDependencies {
   provider: BackendProvider;
   transcriptionWorkflow: TranscriptionWorkflow;
   conversationStore?: ConversationStore;
+  entityMemory?: Pick<EntityMemoryService, "recordTurn">;
   logger?: boolean | FastifyLoggerOptions;
 }
 
@@ -284,6 +286,7 @@ export async function buildApp({
   provider,
   transcriptionWorkflow,
   conversationStore,
+  entityMemory,
   logger = true,
 }: AppDependencies): Promise<FastifyInstance> {
   const expectedTokenDigest = createHash("sha256").update(config.serviceToken).digest();
@@ -476,6 +479,37 @@ export async function buildApp({
       : [{ role: "user" as const, content: text }];
     if (!messages || reply.raw.destroyed) {
       return;
+    }
+
+    if (entityMemory) {
+      const completionReserveMs = config.providerTimeoutMs + 5_000;
+      const memoryBudgetMs = Math.min(
+        config.providerTimeoutMs,
+        deadline - Date.now() - completionReserveMs,
+      );
+      if (memoryBudgetMs > 0) {
+        try {
+          const memoryCompleted = await runWithDeadline(
+            request,
+            async (signal) => {
+              await entityMemory.recordTurn(text, signal);
+              return true;
+            },
+            config,
+            memoryBudgetMs,
+            memoryBudgetMs,
+            "entity_memory",
+          );
+          if (memoryCompleted !== true || reply.raw.destroyed) {
+            return;
+          }
+        } catch {
+          request.log.warn(
+            { requestId: request.id, operation: "entity_memory" },
+            "entity_memory_failed",
+          );
+        }
+      }
     }
 
     const completion = await runChatOperation(
