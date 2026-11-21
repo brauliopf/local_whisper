@@ -60,7 +60,7 @@ nonisolated protocol BackendClienting: Sendable {
 }
 
 nonisolated enum BackendConfiguration {
-    static let fallbackURL = URL(string: "https://local-whisper-api-24n67dikla-uw.a.run.app")!
+    static let fallbackURL = URL(string: "https://local-whisper-api-736278059975.us-west1.run.app")!
 
     static var baseURL: URL {
         guard

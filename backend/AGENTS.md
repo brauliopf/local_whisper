@@ -59,6 +59,6 @@ The service runs on Google Cloud Run:
 - Project: `local-whisper-509423`
 - Region: `us-west1`
 - Service: `local-whisper-api`
-- Base URL: `https://local-whisper-api-24n67dikla-uw.a.run.app`
+- Base URL: `https://local-whisper-api-736278059975.us-west1.run.app`
 
 Inject `OPENAI_API_KEY`, `SERVICE_TOKEN`, and optional `TYPESAFE_API_KEY` from Google Secret Manager. The deployed `SERVICE_TOKEN` must match the token stored in the macOS app Keychain. Cloud Run IAM authentication is not used by the client.
